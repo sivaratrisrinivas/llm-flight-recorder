@@ -28,6 +28,10 @@ dev = [
   "ruff>=0.6",
   "mypy>=1.11",
 ]
+hf = [
+  "torch>=2.2",
+  "transformers>=4.40",
+]
 
 [project.scripts]
 llmfr = "llmfr.cli:main"
@@ -38,6 +42,9 @@ Repository = "https://github.com/sivaratrisrinivas/llm-flight-recorder"
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
+markers = [
+  "slow: downloads or runs a real Hugging Face model",
+]
 
 [tool.ruff]
 line-length = 100
@@ -61,3 +68,7 @@ plugins = ["pydantic.mypy"]
 init_forbid_extra = true
 init_typed = true
 warn_required_dynamic_aliases = true
+
+[[tool.mypy.overrides]]
+module = ["torch", "torch.*", "transformers", "transformers.*"]
+ignore_missing_imports = true
