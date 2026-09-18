@@ -1,4 +1,4 @@
-"""Live Hugging Face adapter tests. Need `pip install 'llmfr[hf]'` and Hub access."""
+"""Live Hugging Face adapter tests. Need CPU torch, the `hf` extra, and Hub access."""
 
 from __future__ import annotations
 

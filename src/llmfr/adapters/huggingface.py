@@ -1,4 +1,4 @@
-"""Hugging Face causal LM adapter. Optional extra: `pip install 'llmfr[hf]'`."""
+"""Hugging Face causal LM adapter. Optional extra `hf` (CPU torch first)."""
 
 from __future__ import annotations
 
@@ -25,13 +25,21 @@ _HF_CAPABILITIES = AdapterCapabilities(
 _COMMIT_SHA = re.compile(r"^[0-9a-fA-F]{40}$")
 
 
+_HF_INSTALL_HINT = (
+    "Hugging Face adapter requires torch and transformers. "
+    "Install CPU torch first so pip does not pull the CUDA-default PyPI wheel: "
+    "pip install --index-url https://download.pytorch.org/whl/cpu torch "
+    "&& pip install --upgrade-strategy only-if-needed -e '.[dev,hf]' "
+    "(packaged: same CPU torch command, then "
+    "pip install --upgrade-strategy only-if-needed 'llmfr[hf]')."
+)
+
+
 class HuggingFaceExtraMissingError(ImportError):
     """Raised when torch/transformers are not installed."""
 
     def __init__(self) -> None:
-        super().__init__(
-            "Hugging Face adapter requires optional extras. Install with: pip install 'llmfr[hf]'"
-        )
+        super().__init__(_HF_INSTALL_HINT)
 
 
 def _import_backend() -> tuple[Any, Any]:

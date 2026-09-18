@@ -27,9 +27,13 @@ def test_capability_flag_names() -> None:
     }
 
 
-def test_huggingface_extra_missing_error_points_at_extra() -> None:
-    err = HuggingFaceExtraMissingError()
-    assert "llmfr[hf]" in str(err)
+def test_huggingface_extra_missing_error_points_at_cpu_torch_install() -> None:
+    err = str(HuggingFaceExtraMissingError())
+    assert "https://download.pytorch.org/whl/cpu" in err
+    assert "--upgrade-strategy only-if-needed" in err
+    assert ".[dev,hf]" in err
+    assert "llmfr[hf]" in err
+    assert "Install with: pip install 'llmfr[hf]'" not in err
 
 
 def test_constructor_requires_backend(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -37,7 +41,7 @@ def test_constructor_requires_backend(monkeypatch: pytest.MonkeyPatch) -> None:
         raise HuggingFaceExtraMissingError()
 
     monkeypatch.setattr("llmfr.adapters.huggingface._import_backend", _missing)
-    with pytest.raises(HuggingFaceExtraMissingError, match=r"llmfr\[hf\]"):
+    with pytest.raises(HuggingFaceExtraMissingError, match=r"download\.pytorch\.org/whl/cpu"):
         HuggingFaceCausalLMAdapter()
 
 
