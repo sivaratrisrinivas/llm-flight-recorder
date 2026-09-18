@@ -76,13 +76,17 @@ def test_put_insert_conflict_maps_to_duplicate(
 ) -> None:
     store = TraceStore(tmp_path)
     trace = make_trace()
-    store.put(trace, fmt="jsonl")
+    jsonl_path = store.put(trace, fmt="jsonl")
     monkeypatch.setattr(store, "_index_row", lambda _trace_id: None)
     with pytest.raises(DuplicateTraceIdError):
         store.put(trace, fmt="json")
     monkeypatch.undo()
+    json_path = jsonl_path.with_suffix(".json")
+    assert jsonl_path.is_file()
+    assert not json_path.exists()
+    assert list(store.traces_dir.glob("*.tmp")) == []
     loaded = store.get(str(trace.run_metadata.trace_id))
-    assert loaded.run_metadata.trace_id == trace.run_metadata.trace_id
+    assert loaded == trace
 
 
 def test_get_rejects_relpath_outside_traces(tmp_path: Path) -> None:

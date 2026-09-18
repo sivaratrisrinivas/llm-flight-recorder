@@ -7,6 +7,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Literal
+from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict
 
@@ -90,17 +91,20 @@ class TraceStore:
             raise DuplicateTraceIdError(f"trace_id already exists: {trace_id}")
 
         text = dumps_jsonl(trace) if fmt == "jsonl" else dumps_json(trace)
-        tmp = dest.with_suffix(dest.suffix + ".tmp")
+        tmp = dest.with_name(f"{dest.name}.{uuid4().hex}.tmp")
         tmp.write_text(text, encoding="utf-8")
-        tmp.replace(dest)
-
         entry = _entry_from_trace(trace, relpath=f"traces/{filename}", fmt=fmt)
         sql = _REPLACE_SQL if overwrite else _INSERT_SQL
-        with self._connect() as conn:
-            try:
-                conn.execute(sql, _entry_params(entry))
-            except sqlite3.IntegrityError as exc:
-                raise DuplicateTraceIdError(f"trace_id already exists: {trace_id}") from exc
+        try:
+            with self._connect() as conn:
+                try:
+                    conn.execute(sql, _entry_params(entry))
+                except sqlite3.IntegrityError as exc:
+                    raise DuplicateTraceIdError(f"trace_id already exists: {trace_id}") from exc
+                tmp.replace(dest)
+        except Exception:
+            tmp.unlink(missing_ok=True)
+            raise
 
         if overwrite and existing is not None:
             self._remove_replaced_file(existing.relpath, dest)

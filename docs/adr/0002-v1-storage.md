@@ -38,8 +38,12 @@ without `events`) followed by one event record per line. Both go through
 `trace_id` comes from `run_metadata.trace_id`. The filename is that UUID. The
 index primary key is that UUID. `TraceStore.put` does not assign a new id.
 Putting an existing id requires `overwrite=True`; otherwise
-`DuplicateTraceIdError`. Overwrite keeps the same `trace_id` and replaces the
-file plus index row. Switching JSON to JSONL deletes the old file.
+`DuplicateTraceIdError`. `put` writes a sibling `.tmp` first, claims the index
+row (`INSERT`, or `INSERT OR REPLACE` when overwriting), then publishes the
+file with an atomic rename. A failed `INSERT` deletes the `.tmp` and leaves
+the indexed file unchanged. Overwrite keeps the same `trace_id` and replaces
+the file plus index row. Switching JSON to JSONL deletes the old file after
+the new path is published.
 
 Unknown `schema_version` values never land in the index: validation runs on
 the payload before callers typically `put`, and `get` validates again.
