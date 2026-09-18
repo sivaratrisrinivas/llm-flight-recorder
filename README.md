@@ -2,54 +2,48 @@
 
 CLI name: `llmfr`.
 
-Record, replay, and compare LLM generations. When two generations differ, later
-milestones will show the first divergence versus downstream effects.
+## Problem
 
-Python-first. Local-only for v1 (SQLite index plus on-disk JSON/JSONL traces).
-No Kafka, Kubernetes, Redis, or Postgres. No LangChain. Hosted APIs that do not
-return real logprobs are recorded as logits-unavailable. This project will not
-invent fake logits.
+Two LLM generations can look different in the final string while splitting for
+very different reasons. The first sampled token may differ. The model-visible
+window may have been truncated. Everything after the split may just be
+downstream fallout. A string diff cannot tell those apart.
 
-## Milestone 1 (this branch)
+llmfr records a generation so later tools can. A v1 trace keeps run metadata,
+environment, model config, generation config, per-step sampled tokens, top-k
+logits or probabilities, and both `full_history` and `model_visible_context`.
+Hosted APIs that do not return real logprobs are stored as logits-unavailable.
+This project will not invent fake logits.
 
-Done in this milestone:
+Python-first. Local-only for v1: SQLite index plus on-disk JSON/JSONL, keyed by
+a stable `trace_id`. No Kafka, Kubernetes, Redis, or Postgres. No LangChain.
 
-- Versioned Pydantic `Trace` and `Event` schema (`SCHEMA_VERSION = 1.0.0`)
-- SQLite index plus JSON / JSONL trace files
-- Human-readable top-k logits (no full-vocab blob)
+## Milestone 1 (done)
+
+- Versioned Pydantic Trace and Event schema (`SCHEMA_VERSION = 1.0.0`)
+- Package layout: `llmfr.core` (schema) and `llmfr.storage` (SQLite + files)
+- Human-readable top-k (no full-vocab blob)
 - Round-trip serialize/deserialize tests (Case G)
-- Schema version constant and a v1-only ADR (unknown versions are rejected)
+- ADRs for the v1 schema and storage choices
 
-Install:
+Not in M1: Hugging Face adapter, recorder loop, replay, compare, or a `record`
+CLI command. `llmfr version`, `validate`, and `topk` only inspect stored traces.
+
+Install and test:
 
 ```bash
 pip install -e ".[dev]"
-```
-
-Run tests:
-
-```bash
 pytest
 ruff check src tests
 ruff format --check src tests
 mypy
 ```
 
-CLI (schema/storage only in M1):
-
-```bash
-llmfr version
-llmfr validate path/to/trace.json
-llmfr topk path/to/trace.jsonl
-```
-
 ## Roadmap
 
-- **M1** Schema and storage (this branch)
-- **M2** Hugging Face adapter
-- **M3** Recorder loop
-- **M5** Compare / first-divergence UI
+- [x] **M1** Schema and storage
+- [ ] **M2** Hugging Face adapter
+- [ ] **M3** Recorder loop
+- [ ] **M5** Compare / first-divergence UI
 
-## Design notes
-
-See `docs/adr/0001-schema-v1-only.md`.
+Design notes: `docs/adr/0001-v1-trace-schema.md` and `docs/adr/0002-v1-storage.md`.

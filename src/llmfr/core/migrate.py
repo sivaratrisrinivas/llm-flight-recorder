@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from llmfr.version import SCHEMA_VERSION
+from llmfr.core.version import SCHEMA_VERSION
 
 
 class UnsupportedSchemaVersionError(ValueError):

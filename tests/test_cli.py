@@ -5,8 +5,8 @@ from pathlib import Path
 from pytest import CaptureFixture
 
 from llmfr.cli import run
-from llmfr.schema import dumps_json
-from llmfr.version import SCHEMA_VERSION, __version__
+from llmfr.core.schema import dumps_json
+from llmfr.core.version import SCHEMA_VERSION, __version__
 from tests.factories import make_trace
 
 

@@ -1,4 +1,4 @@
-"""SQLite index plus JSON/JSONL trace files."""
+"""SQLite index plus JSON/JSONL trace files keyed by a stable trace_id."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
 
-from llmfr.schema import Trace, dumps_json, dumps_jsonl, loads_json, loads_jsonl
+from llmfr.core.schema import Trace, dumps_json, dumps_jsonl, loads_json, loads_jsonl
 
 FormatName = Literal["json", "jsonl"]
 
@@ -36,6 +36,10 @@ CREATE INDEX IF NOT EXISTS idx_traces_model ON traces(model_name);
 _PREVIEW_CHARS = 200
 
 
+class DuplicateTraceIdError(ValueError):
+    """Raised when putting a trace_id that already exists without overwrite=True."""
+
+
 class TraceIndexEntry(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -53,7 +57,7 @@ class TraceIndexEntry(BaseModel):
 
 
 class TraceStore:
-    """Directory of traces: index.sqlite plus traces/<id>.json[l]."""
+    """Directory of traces: index.sqlite plus traces/<stable-id>.json[l]."""
 
     def __init__(self, root: Path) -> None:
         self.root = root
@@ -64,10 +68,18 @@ class TraceStore:
         with self._connect() as conn:
             conn.executescript(_SCHEMA_SQL)
 
-    def put(self, trace: Trace, fmt: FormatName = "jsonl") -> Path:
-        trace_id = str(trace.trace_id)
+    def put(self, trace: Trace, fmt: FormatName = "jsonl", *, overwrite: bool = False) -> Path:
+        trace_id = str(trace.run_metadata.trace_id)
         filename = f"{trace_id}.{fmt}"
         dest = self.traces_dir / filename
+        existing = self._index_row(trace_id)
+        if existing is not None or dest.exists():
+            if not overwrite:
+                raise DuplicateTraceIdError(f"trace_id already exists: {trace_id}")
+            if existing is not None:
+                old_path = self.root / existing.relpath
+                if old_path != dest and old_path.exists():
+                    old_path.unlink()
         text = dumps_jsonl(trace) if fmt == "jsonl" else dumps_json(trace)
         tmp = dest.with_suffix(dest.suffix + ".tmp")
         tmp.write_text(text, encoding="utf-8")
@@ -106,14 +118,10 @@ class TraceStore:
         return loads_json(text)
 
     def get_index(self, trace_id: str) -> TraceIndexEntry:
-        with self._connect() as conn:
-            row = conn.execute(
-                "SELECT * FROM traces WHERE trace_id = ?",
-                (trace_id,),
-            ).fetchone()
+        row = self._index_row(trace_id)
         if row is None:
             raise KeyError(f"unknown trace_id {trace_id}")
-        return _row_to_entry(row)
+        return row
 
     def list(self) -> list[TraceIndexEntry]:
         with self._connect() as conn:
@@ -121,6 +129,16 @@ class TraceStore:
                 "SELECT * FROM traces ORDER BY created_at DESC, trace_id ASC"
             ).fetchall()
         return [_row_to_entry(row) for row in rows]
+
+    def _index_row(self, trace_id: str) -> TraceIndexEntry | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM traces WHERE trace_id = ?",
+                (trace_id,),
+            ).fetchone()
+        if row is None:
+            return None
+        return _row_to_entry(row)
 
     @contextmanager
     def _connect(self) -> Iterator[sqlite3.Connection]:
@@ -143,16 +161,17 @@ def _preview(text: str) -> str:
 
 def _entry_from_trace(trace: Trace, relpath: str, fmt: FormatName) -> TraceIndexEntry:
     dumped = trace.model_dump(mode="json")
+    meta = trace.run_metadata
     return TraceIndexEntry(
-        trace_id=str(trace.trace_id),
+        trace_id=str(meta.trace_id),
         schema_version=trace.schema_version,
-        created_at=dumped["created_at"],
+        created_at=dumped["run_metadata"]["created_at"],
         model_name=trace.model.name,
         model_provider=trace.model.provider,
-        prompt_preview=_preview(trace.prompt),
-        output_preview=_preview(trace.output_text),
+        prompt_preview=_preview(meta.prompt),
+        output_preview=_preview(meta.output_text),
         event_count=len(trace.events),
-        logits_mode=trace.logits.mode,
+        logits_mode=meta.logits.mode,
         relpath=relpath,
         format=fmt,
     )

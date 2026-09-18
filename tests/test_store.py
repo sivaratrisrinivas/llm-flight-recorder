@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from llmfr.store import TraceStore
+from llmfr.storage.store import DuplicateTraceIdError, TraceStore
 from tests.factories import make_trace
 
 
@@ -15,9 +15,10 @@ def test_store_lists_and_loads_index(tmp_path: Path) -> None:
     entries = store.list()
     assert len(entries) == 1
     entry = entries[0]
+    assert entry.trace_id == str(trace.run_metadata.trace_id)
     assert entry.model_name == "tiny-model"
     assert entry.prompt_preview.startswith("Say hello")
-    assert store.get_index(str(trace.trace_id)).event_count == 2
+    assert store.get_index(entry.trace_id).event_count == 2
 
 
 def test_store_unknown_id(tmp_path: Path) -> None:
@@ -26,11 +27,25 @@ def test_store_unknown_id(tmp_path: Path) -> None:
         store.get("missing")
 
 
-def test_store_overwrites_same_id(tmp_path: Path) -> None:
+def test_store_refuses_duplicate_id_without_overwrite(tmp_path: Path) -> None:
     store = TraceStore(tmp_path)
     first = make_trace()
     store.put(first, fmt="json")
-    second = first.model_copy(update={"output_text": "Hello world!"})
-    store.put(second, fmt="json")
-    assert store.get(str(first.trace_id)).output_text == "Hello world!"
+    with pytest.raises(DuplicateTraceIdError):
+        store.put(first, fmt="json")
+
+
+def test_store_overwrite_keeps_stable_trace_id(tmp_path: Path) -> None:
+    store = TraceStore(tmp_path)
+    first = make_trace()
+    store.put(first, fmt="json")
+    second = first.model_copy(
+        update={
+            "run_metadata": first.run_metadata.model_copy(update={"output_text": "Hello world!"})
+        }
+    )
+    store.put(second, fmt="json", overwrite=True)
+    loaded = store.get(str(first.run_metadata.trace_id))
+    assert loaded.run_metadata.trace_id == first.run_metadata.trace_id
+    assert loaded.run_metadata.output_text == "Hello world!"
     assert len(store.list()) == 1

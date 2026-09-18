@@ -1,4 +1,4 @@
-"""Minimal CLI for schema/storage work in Milestone 1."""
+"""Minimal inspect CLI for Milestone 1. No record, replay, or compare commands."""
 
 from __future__ import annotations
 
@@ -6,15 +6,18 @@ import argparse
 import sys
 from collections.abc import Sequence
 
-from llmfr.format import format_trace_topk
-from llmfr.schema import load_path
-from llmfr.version import SCHEMA_VERSION, __version__
+from llmfr.core.format import format_trace_topk
+from llmfr.core.schema import load_path
+from llmfr.core.version import SCHEMA_VERSION, __version__
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="llmfr",
-        description="LLM Flight Recorder (schema and storage in Milestone 1).",
+        description=(
+            "LLM Flight Recorder. Milestone 1 can validate and print stored traces. "
+            "It does not record, replay, or compare generations."
+        ),
     )
     sub = parser.add_subparsers(dest="command", required=True)
 
@@ -38,7 +41,8 @@ def run(argv: Sequence[str] | None = None) -> int:
     if args.command == "validate":
         trace = load_path(args.path)
         sys.stdout.write(
-            f"ok {trace.trace_id} schema={trace.schema_version} events={len(trace.events)}\n"
+            f"ok {trace.run_metadata.trace_id} "
+            f"schema={trace.schema_version} events={len(trace.events)}\n"
         )
         return 0
     if args.command == "topk":
