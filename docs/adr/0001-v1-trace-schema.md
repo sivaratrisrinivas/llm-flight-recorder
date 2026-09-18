@@ -62,7 +62,9 @@ object with these required blocks:
      must be a strict suffix (left-truncation). A later compare can then blame
      a window clip instead of the sampler.
 
-`extra="forbid"` on every model. Extensions go in `run_metadata.tags`, not
+`extra="forbid"` and `frozen=True` on every schema model (`FrozenModel`).
+Instances cannot be assigned to after construction; copy with
+`model_copy(update=...)`. Extensions go in `run_metadata.tags`, not
 undeclared keys.
 
 If a backend cannot provide real logits or logprobs, `run_metadata.logits.mode`

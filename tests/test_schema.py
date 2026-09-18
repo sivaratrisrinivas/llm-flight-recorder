@@ -152,3 +152,12 @@ def test_untruncated_mismatch_is_rejected() -> None:
     payload["events"][0]["model_visible_context"]["truncated"] = False
     with pytest.raises(ValidationError, match="must equal full_history"):
         Trace.model_validate(payload)
+
+
+def test_schema_models_are_frozen() -> None:
+    trace = make_trace()
+    event = trace.events[0]
+    with pytest.raises(ValidationError, match="frozen"):
+        trace.schema_version = "2.0.0"
+    with pytest.raises(ValidationError, match="frozen"):
+        event.sampled_token = "nope"

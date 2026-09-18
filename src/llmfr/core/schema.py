@@ -21,7 +21,7 @@ def utcnow() -> datetime:
 class FrozenModel(BaseModel):
     # populate_by_name lets us construct Trace(model=...) while serializing
     # the field as model_config. Pydantic reserves the name model_config.
-    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+    model_config = ConfigDict(extra="forbid", populate_by_name=True, frozen=True)
 
 
 class TopKCandidate(FrozenModel):
