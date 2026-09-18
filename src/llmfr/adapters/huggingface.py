@@ -27,8 +27,7 @@ class HuggingFaceExtraMissingError(ImportError):
 
     def __init__(self) -> None:
         super().__init__(
-            "Hugging Face adapter requires optional extras. "
-            "Install with: pip install 'llmfr[hf]'"
+            "Hugging Face adapter requires optional extras. Install with: pip install 'llmfr[hf]'"
         )
 
 
@@ -172,9 +171,7 @@ class HuggingFaceCausalLMAdapter:
             outputs = self._model(input_ids=input_ids, use_cache=False)
         raw = getattr(outputs, "logits", None)
         if raw is None:
-            raise RuntimeError(
-                f"{self._model_id} did not return logits; refusing to invent them"
-            )
+            raise RuntimeError(f"{self._model_id} did not return logits; refusing to invent them")
         last = raw[0, -1].detach().to(dtype=torch.float32, device="cpu")
         if last.ndim != 1:
             raise RuntimeError(f"expected a 1-d vocab vector, got shape {tuple(last.shape)}")
