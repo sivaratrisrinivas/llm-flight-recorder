@@ -1,0 +1,227 @@
+"""SQLite index plus JSON/JSONL trace files keyed by a stable trace_id."""
+
+from __future__ import annotations
+
+import sqlite3
+from collections.abc import Iterator
+from contextlib import contextmanager
+from pathlib import Path
+from typing import Literal
+from uuid import uuid4
+
+from pydantic import BaseModel, ConfigDict
+
+from llmfr.core.schema import Trace, dumps_json, dumps_jsonl, loads_json, loads_jsonl
+
+FormatName = Literal["json", "jsonl"]
+
+_SCHEMA_SQL = """
+CREATE TABLE IF NOT EXISTS traces (
+    trace_id TEXT PRIMARY KEY,
+    schema_version TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    model_name TEXT NOT NULL,
+    model_provider TEXT NOT NULL,
+    prompt_preview TEXT NOT NULL,
+    output_preview TEXT NOT NULL,
+    event_count INTEGER NOT NULL,
+    logits_mode TEXT NOT NULL,
+    relpath TEXT NOT NULL,
+    format TEXT NOT NULL CHECK (format IN ('json', 'jsonl'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_traces_created_at ON traces(created_at);
+CREATE INDEX IF NOT EXISTS idx_traces_model ON traces(model_name);
+"""
+
+_PREVIEW_CHARS = 200
+
+_INDEX_COLUMNS = """
+    trace_id, schema_version, created_at, model_name, model_provider,
+    prompt_preview, output_preview, event_count, logits_mode, relpath, format
+"""
+_INSERT_SQL = f"INSERT INTO traces ({_INDEX_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+_REPLACE_SQL = (
+    f"INSERT OR REPLACE INTO traces ({_INDEX_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+)
+
+
+class DuplicateTraceIdError(ValueError):
+    """Raised when putting a trace_id that already exists without overwrite=True."""
+
+
+class TracePathError(ValueError):
+    """Raised when an index relpath would read a file outside traces/."""
+
+
+class TraceIndexEntry(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    trace_id: str
+    schema_version: str
+    created_at: str
+    model_name: str
+    model_provider: str
+    prompt_preview: str
+    output_preview: str
+    event_count: int
+    logits_mode: str
+    relpath: str
+    format: FormatName
+
+
+class TraceStore:
+    """Directory of traces: index.sqlite plus traces/<stable-id>.json[l]."""
+
+    def __init__(self, root: Path) -> None:
+        self.root = root
+        self.traces_dir = root / "traces"
+        self.db_path = root / "index.sqlite"
+        self.root.mkdir(parents=True, exist_ok=True)
+        self.traces_dir.mkdir(parents=True, exist_ok=True)
+        with self._connect() as conn:
+            conn.executescript(_SCHEMA_SQL)
+
+    def put(self, trace: Trace, fmt: FormatName = "jsonl", *, overwrite: bool = False) -> Path:
+        trace_id = str(trace.run_metadata.trace_id)
+        filename = f"{trace_id}.{fmt}"
+        dest = self.traces_dir / filename
+        existing = self._index_row(trace_id)
+        if not overwrite and (existing is not None or dest.exists()):
+            raise DuplicateTraceIdError(f"trace_id already exists: {trace_id}")
+
+        text = dumps_jsonl(trace) if fmt == "jsonl" else dumps_json(trace)
+        tmp = dest.with_name(f"{dest.name}.{uuid4().hex}.tmp")
+        tmp.write_text(text, encoding="utf-8")
+        entry = _entry_from_trace(trace, relpath=f"traces/{filename}", fmt=fmt)
+        sql = _REPLACE_SQL if overwrite else _INSERT_SQL
+        try:
+            with self._connect() as conn:
+                try:
+                    conn.execute(sql, _entry_params(entry))
+                except sqlite3.IntegrityError as exc:
+                    raise DuplicateTraceIdError(f"trace_id already exists: {trace_id}") from exc
+                tmp.replace(dest)
+        except Exception:
+            tmp.unlink(missing_ok=True)
+            raise
+
+        if overwrite and existing is not None:
+            self._remove_replaced_file(existing.relpath, dest)
+        return dest
+
+    def get(self, trace_id: str) -> Trace:
+        entry = self.get_index(trace_id)
+        path = self._contained_path(entry.relpath)
+        text = path.read_text(encoding="utf-8")
+        if entry.format == "jsonl":
+            return loads_jsonl(text)
+        return loads_json(text)
+
+    def get_index(self, trace_id: str) -> TraceIndexEntry:
+        row = self._index_row(trace_id)
+        if row is None:
+            raise KeyError(f"unknown trace_id {trace_id}")
+        return row
+
+    def list(self) -> list[TraceIndexEntry]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT * FROM traces ORDER BY created_at DESC, trace_id ASC"
+            ).fetchall()
+        return [_row_to_entry(row) for row in rows]
+
+    def _contained_path(self, relpath: str) -> Path:
+        candidate = (self.root / relpath).resolve()
+        traces_root = self.traces_dir.resolve()
+        if not candidate.is_relative_to(traces_root):
+            raise TracePathError(f"trace path escapes store: {relpath}")
+        return candidate
+
+    def _remove_replaced_file(self, old_relpath: str, new_path: Path) -> None:
+        try:
+            old_path = self._contained_path(old_relpath)
+        except TracePathError:
+            return
+        if old_path != new_path.resolve() and old_path.is_file():
+            old_path.unlink()
+
+    def _index_row(self, trace_id: str) -> TraceIndexEntry | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM traces WHERE trace_id = ?",
+                (trace_id,),
+            ).fetchone()
+        if row is None:
+            return None
+        return _row_to_entry(row)
+
+    @contextmanager
+    def _connect(self) -> Iterator[sqlite3.Connection]:
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA foreign_keys = ON")
+        conn.execute("PRAGMA journal_mode = WAL")
+        try:
+            yield conn
+            conn.commit()
+        finally:
+            conn.close()
+
+
+def _preview(text: str) -> str:
+    if len(text) <= _PREVIEW_CHARS:
+        return text
+    return text[:_PREVIEW_CHARS]
+
+
+def _entry_from_trace(trace: Trace, relpath: str, fmt: FormatName) -> TraceIndexEntry:
+    meta = trace.run_metadata
+    created_at = meta.model_dump(mode="json")["created_at"]
+    return TraceIndexEntry(
+        trace_id=str(meta.trace_id),
+        schema_version=trace.schema_version,
+        created_at=created_at,
+        model_name=trace.model.name,
+        model_provider=trace.model.provider,
+        prompt_preview=_preview(meta.prompt),
+        output_preview=_preview(meta.output_text),
+        event_count=len(trace.events),
+        logits_mode=meta.logits.mode,
+        relpath=relpath,
+        format=fmt,
+    )
+
+
+def _entry_params(
+    entry: TraceIndexEntry,
+) -> tuple[str, str, str, str, str, str, str, int, str, str, str]:
+    return (
+        entry.trace_id,
+        entry.schema_version,
+        entry.created_at,
+        entry.model_name,
+        entry.model_provider,
+        entry.prompt_preview,
+        entry.output_preview,
+        entry.event_count,
+        entry.logits_mode,
+        entry.relpath,
+        entry.format,
+    )
+
+
+def _row_to_entry(row: sqlite3.Row) -> TraceIndexEntry:
+    return TraceIndexEntry(
+        trace_id=row["trace_id"],
+        schema_version=row["schema_version"],
+        created_at=row["created_at"],
+        model_name=row["model_name"],
+        model_provider=row["model_provider"],
+        prompt_preview=row["prompt_preview"],
+        output_preview=row["output_preview"],
+        event_count=row["event_count"],
+        logits_mode=row["logits_mode"],
+        relpath=row["relpath"],
+        format=row["format"],
+    )
