@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import platform
+import re
 from collections.abc import Sequence
 from typing import Any
 
@@ -17,9 +18,11 @@ _HF_CAPABILITIES = AdapterCapabilities(
     supports_logprobs=True,
     supports_attention=False,
     supports_hidden_states=False,
-    supports_seed=True,
+    supports_seed=False,
     supports_replay=True,
 )
+
+_COMMIT_SHA = re.compile(r"^[0-9a-fA-F]{40}$")
 
 
 class HuggingFaceExtraMissingError(ImportError):
@@ -47,6 +50,9 @@ class HuggingFaceCausalLMAdapter:
     position's raw logits. Logprobs are `log_softmax` of those logits, not a
     second model API. Attention and hidden states are not returned here even
     though some HF models can compute them.
+
+    Sampling is Milestone 3. This adapter does not take a seed and does not
+    call `torch.manual_seed`; `supports_seed` is False until then.
     """
 
     def __init__(
@@ -55,12 +61,9 @@ class HuggingFaceCausalLMAdapter:
         *,
         revision: str | None = None,
         device: str = "cpu",
-        seed: int | None = None,
         max_visible_tokens: int | None = None,
     ) -> None:
         torch, transformers = _import_backend()
-        if seed is not None:
-            torch.manual_seed(seed)
 
         tokenizer = transformers.AutoTokenizer.from_pretrained(
             model_id, revision=revision, trust_remote_code=False
@@ -73,6 +76,7 @@ class HuggingFaceCausalLMAdapter:
         )
         model.to(device=torch.device(device), dtype=torch.float32)
         model.eval()
+        pinned = _resolved_hub_revision(model=model, model_id=model_id, requested=revision)
 
         config = model.config
         model_max = _max_positions(config)
@@ -98,13 +102,12 @@ class HuggingFaceCausalLMAdapter:
         self._model = model
         self._tokenizer = tokenizer
         self._device = torch.device(device)
-        self._seed = seed
         self._max_visible_tokens = clip
         self._model_id = model_id
         self._model_config = ModelConfig(
             provider="huggingface",
             name=model_id,
-            revision=revision,
+            revision=pinned,
             tokenizer=str(tokenizer_name),
             dtype=dtype_name,
             architecture=architecture,
@@ -113,10 +116,6 @@ class HuggingFaceCausalLMAdapter:
     @property
     def capabilities(self) -> AdapterCapabilities:
         return _HF_CAPABILITIES
-
-    @property
-    def seed(self) -> int | None:
-        return self._seed
 
     @property
     def model_id(self) -> str:
@@ -163,6 +162,7 @@ class HuggingFaceCausalLMAdapter:
         requested = tuple(int(token_id) for token_id in model_visible_context)
         if not requested:
             raise ValueError("model_visible_context must be non-empty")
+        self._require_in_vocab(requested)
         visible, truncated = self._clip(requested)
 
         torch = self._torch
@@ -185,11 +185,60 @@ class HuggingFaceCausalLMAdapter:
             truncated=truncated,
         )
 
+    def _require_in_vocab(self, token_ids: tuple[int, ...]) -> None:
+        vocab = self.vocab_size
+        for index, token_id in enumerate(token_ids):
+            if token_id < 0 or token_id >= vocab:
+                raise ValueError(
+                    f"model_visible_context token id {token_id} at position {index} "
+                    f"is outside [0, {vocab})"
+                )
+
     def _clip(self, token_ids: tuple[int, ...]) -> tuple[tuple[int, ...], bool]:
         limit = self._max_visible_tokens
         if len(token_ids) <= limit:
             return token_ids, False
         return token_ids[-limit:], True
+
+
+def _resolved_hub_revision(*, model: Any, model_id: str, requested: str | None) -> str:
+    """Pin ModelConfig.revision to the Hub commit actually loaded.
+
+    `supports_replay=True` is only honest if this SHA is known. Moving names
+    such as `main` are not stored.
+    """
+    sha = _as_commit_hash(getattr(getattr(model, "config", None), "_commit_hash", None))
+    if sha is None:
+        sha = _as_commit_hash(getattr(model, "_commit_hash", None))
+    if sha is None:
+        sha = _hub_commit_sha(model_id, requested)
+    if sha is None:
+        raise RuntimeError(
+            f"could not resolve Hub commit hash for {model_id!r} "
+            f"(requested revision={requested!r}); refusing to advertise replay without a pin"
+        )
+    return sha
+
+
+def _hub_commit_sha(model_id: str, requested: str | None) -> str | None:
+    try:
+        from huggingface_hub import model_info
+    except ImportError:
+        return None
+    try:
+        info = model_info(model_id, revision=requested)
+    except Exception:
+        return None
+    return _as_commit_hash(getattr(info, "sha", None))
+
+
+def _as_commit_hash(value: object) -> str | None:
+    if not isinstance(value, str):
+        return None
+    text = value.strip()
+    if not _COMMIT_SHA.fullmatch(text):
+        return None
+    return text.lower()
 
 
 def _max_positions(config: Any) -> int:

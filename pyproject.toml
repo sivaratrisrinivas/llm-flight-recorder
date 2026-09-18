@@ -70,5 +70,12 @@ init_typed = true
 warn_required_dynamic_aliases = true
 
 [[tool.mypy.overrides]]
-module = ["torch", "torch.*", "transformers", "transformers.*"]
+module = [
+  "torch",
+  "torch.*",
+  "transformers",
+  "transformers.*",
+  "huggingface_hub",
+  "huggingface_hub.*",
+]
 ignore_missing_imports = true

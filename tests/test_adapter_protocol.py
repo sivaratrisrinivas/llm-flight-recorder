@@ -5,7 +5,12 @@ from dataclasses import fields
 import pytest
 
 from llmfr.adapters.base import AdapterCapabilities, StepLogits
-from llmfr.adapters.huggingface import HuggingFaceCausalLMAdapter, HuggingFaceExtraMissingError
+from llmfr.adapters.huggingface import (
+    HuggingFaceCausalLMAdapter,
+    HuggingFaceExtraMissingError,
+    _as_commit_hash,
+    _resolved_hub_revision,
+)
 from llmfr.core.schema import Event, TopKCandidate
 from llmfr.core.version import MAX_TOP_K
 
@@ -71,6 +76,27 @@ def test_step_logits_maps_to_m1_contexts_and_topk() -> None:
     )
     assert event.model_visible_context.truncated is True
     assert event.full_history.token_ids[-3:] == event.model_visible_context.token_ids
+
+
+def test_resolved_hub_revision_requires_commit_sha(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "llmfr.adapters.huggingface._hub_commit_sha", lambda *_args, **_kwargs: None
+    )
+
+    class _Config:
+        _commit_hash = "main"
+
+    class _Model:
+        config = _Config()
+
+    with pytest.raises(RuntimeError, match="commit hash"):
+        _resolved_hub_revision(model=_Model(), model_id="local-only", requested=None)
+
+    pinned = "5f91d94bd9cd7190a9f3216ff93cd1dd95f2c7be"
+    _Config._commit_hash = pinned
+    assert _resolved_hub_revision(model=_Model(), model_id="x", requested=None) == pinned
+    assert _as_commit_hash("main") is None
+    assert _as_commit_hash(pinned.upper()) == pinned
 
 
 def test_top_k_candidates_respects_schema_cap() -> None:

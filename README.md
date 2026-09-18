@@ -54,10 +54,13 @@ ruff format --check src tests
 mypy
 ```
 
-Hugging Face adapter (CPU, downloads `sshleifer/tiny-gpt2` on first run):
+Hugging Face adapter (CPU, downloads `sshleifer/tiny-gpt2` on first run).
+Install the CPU torch wheel first, matching CI. A bare
+`pip install -e ".[dev,hf]"` can pull the CUDA-default PyPI torch build.
 
 ```bash
-pip install -e ".[dev,hf]"
+pip install --index-url https://download.pytorch.org/whl/cpu torch
+pip install --upgrade-strategy only-if-needed -e ".[dev,hf]"
 pytest tests/test_huggingface_adapter.py tests/test_adapter_protocol.py
 ```
 

@@ -23,7 +23,6 @@ def adapter() -> HuggingFaceCausalLMAdapter:
     return HuggingFaceCausalLMAdapter(
         DEFAULT_HF_MODEL_ID,
         device="cpu",
-        seed=0,
         max_visible_tokens=8,
     )
 
@@ -35,13 +34,17 @@ def test_hf_adapter_satisfies_protocol(adapter: HuggingFaceCausalLMAdapter) -> N
     assert caps.supports_logprobs is True
     assert caps.supports_attention is False
     assert caps.supports_hidden_states is False
-    assert caps.supports_seed is True
+    assert caps.supports_seed is False
     assert caps.supports_replay is True
     assert adapter.model_id == DEFAULT_HF_MODEL_ID
     assert adapter.max_visible_tokens == 8
     assert isinstance(adapter.model_config, ModelConfig)
     assert adapter.model_config.provider == "huggingface"
     assert adapter.model_config.name == DEFAULT_HF_MODEL_ID
+    revision = adapter.model_config.revision
+    assert revision is not None
+    assert len(revision) == 40
+    assert int(revision, 16) >= 0
     assert adapter.environment().device == "cpu"
 
 
@@ -122,3 +125,12 @@ def test_hf_adapter_left_truncates_visible_context(
 def test_hf_adapter_rejects_empty_context(adapter: HuggingFaceCausalLMAdapter) -> None:
     with pytest.raises(ValueError, match="non-empty"):
         adapter.next_token_logits([])
+
+
+def test_hf_adapter_rejects_token_ids_outside_vocab(
+    adapter: HuggingFaceCausalLMAdapter,
+) -> None:
+    with pytest.raises(ValueError, match=r"outside \[0, "):
+        adapter.next_token_logits([-1])
+    with pytest.raises(ValueError, match=r"outside \[0, "):
+        adapter.next_token_logits([adapter.vocab_size])

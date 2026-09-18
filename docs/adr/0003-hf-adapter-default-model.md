@@ -31,10 +31,18 @@ because tiny-gpt2 (2 layers, 2 heads, embedding size 2) is only a smoke test.
 
 3. **Install:** torch and transformers live in the optional extra `hf`. A
    core `pip install llmfr` (M1 schema and storage) stays free of those
-   wheels. Adapter tests skip when the extra is missing; CI installs
-   `.[dev,hf]` so the tiny model path actually runs.
+   wheels. Adapter tests skip when the extra is missing. CI (and README)
+   install a CPU torch wheel from `https://download.pytorch.org/whl/cpu`
+   first, then `pip install --upgrade-strategy only-if-needed -e ".[dev,hf]"`
+   so the default PyPI CUDA torch is not the only documented path.
 
-4. **Capabilities this adapter claims**
+4. **Resolved Hub revision:** after `from_pretrained`, the adapter stores the
+   40-character Hub commit SHA in `ModelConfig.revision` (from
+   `config._commit_hash`, then `huggingface_hub.model_info(...).sha`). It
+   raises if that pin cannot be determined. `supports_replay=True` depends
+   on this pin; `main` or `None` is not stored.
+
+5. **Capabilities this adapter claims**
 
    - `supports_logits=True` because `AutoModelForCausalLM` returns a vocab
      vector at the last position.
@@ -43,10 +51,10 @@ because tiny-gpt2 (2 layers, 2 heads, embedding size 2) is only a smoke test.
    - `supports_attention=False` and `supports_hidden_states=False` because
      this adapter does not return those tensors, even if a given HF model
      could compute them.
-   - `supports_seed=True` because `torch.manual_seed` is applied when a seed
-     is passed. Eval-mode logits on CPU are deterministic with or without it.
-   - `supports_replay=True` because the same visible token ids and weights
-     reproduce the same logits. The replay CLI is still M4.
+   - `supports_seed=False` until Milestone 3 sampling. Eval logits do not
+     depend on a seed; the adapter does not call `torch.manual_seed`.
+   - `supports_replay=True` because the same visible token ids and the
+     pinned weights reproduce the same logits. The replay CLI is still M4.
 
 Hosted APIs that do not expose real logits stay out of this adapter. Do not
 fill zeros or a uniform distribution to look like a local model.
@@ -54,8 +62,10 @@ fill zeros or a uniform distribution to look like a local model.
 ## Consequences
 
 - Default constructor is CI-safe. Demos opt into DistilGPT2.
+- A recorded M2/M3 trace can name the exact Hub commit, so a later replay
+  is not chasing `main`.
 - M3 can feed `StepLogits.logits` into top-k `Event` rows without changing
-  the v1 schema.
+  the v1 schema. Sampling seeds belong in M3 `GenerationConfig`, not here.
 - Changing the default model id needs a new ADR (or an update to this one)
   so CI time and demo quality stay an explicit choice.
 
