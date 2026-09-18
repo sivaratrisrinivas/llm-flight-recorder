@@ -35,9 +35,22 @@ CREATE INDEX IF NOT EXISTS idx_traces_model ON traces(model_name);
 
 _PREVIEW_CHARS = 200
 
+_INDEX_COLUMNS = """
+    trace_id, schema_version, created_at, model_name, model_provider,
+    prompt_preview, output_preview, event_count, logits_mode, relpath, format
+"""
+_INSERT_SQL = f"INSERT INTO traces ({_INDEX_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+_REPLACE_SQL = (
+    f"INSERT OR REPLACE INTO traces ({_INDEX_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+)
+
 
 class DuplicateTraceIdError(ValueError):
     """Raised when putting a trace_id that already exists without overwrite=True."""
+
+
+class TracePathError(ValueError):
+    """Raised when an index relpath would read a file outside traces/."""
 
 
 class TraceIndexEntry(BaseModel):
@@ -73,45 +86,29 @@ class TraceStore:
         filename = f"{trace_id}.{fmt}"
         dest = self.traces_dir / filename
         existing = self._index_row(trace_id)
-        if existing is not None or dest.exists():
-            if not overwrite:
-                raise DuplicateTraceIdError(f"trace_id already exists: {trace_id}")
-            if existing is not None:
-                old_path = self.root / existing.relpath
-                if old_path != dest and old_path.exists():
-                    old_path.unlink()
+        if not overwrite and (existing is not None or dest.exists()):
+            raise DuplicateTraceIdError(f"trace_id already exists: {trace_id}")
+
         text = dumps_jsonl(trace) if fmt == "jsonl" else dumps_json(trace)
         tmp = dest.with_suffix(dest.suffix + ".tmp")
         tmp.write_text(text, encoding="utf-8")
         tmp.replace(dest)
+
         entry = _entry_from_trace(trace, relpath=f"traces/{filename}", fmt=fmt)
+        sql = _REPLACE_SQL if overwrite else _INSERT_SQL
         with self._connect() as conn:
-            conn.execute(
-                """
-                INSERT OR REPLACE INTO traces (
-                    trace_id, schema_version, created_at, model_name, model_provider,
-                    prompt_preview, output_preview, event_count, logits_mode, relpath, format
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    entry.trace_id,
-                    entry.schema_version,
-                    entry.created_at,
-                    entry.model_name,
-                    entry.model_provider,
-                    entry.prompt_preview,
-                    entry.output_preview,
-                    entry.event_count,
-                    entry.logits_mode,
-                    entry.relpath,
-                    entry.format,
-                ),
-            )
+            try:
+                conn.execute(sql, _entry_params(entry))
+            except sqlite3.IntegrityError as exc:
+                raise DuplicateTraceIdError(f"trace_id already exists: {trace_id}") from exc
+
+        if overwrite and existing is not None:
+            self._remove_replaced_file(existing.relpath, dest)
         return dest
 
     def get(self, trace_id: str) -> Trace:
         entry = self.get_index(trace_id)
-        path = self.root / entry.relpath
+        path = self._contained_path(entry.relpath)
         text = path.read_text(encoding="utf-8")
         if entry.format == "jsonl":
             return loads_jsonl(text)
@@ -129,6 +126,21 @@ class TraceStore:
                 "SELECT * FROM traces ORDER BY created_at DESC, trace_id ASC"
             ).fetchall()
         return [_row_to_entry(row) for row in rows]
+
+    def _contained_path(self, relpath: str) -> Path:
+        candidate = (self.root / relpath).resolve()
+        traces_root = self.traces_dir.resolve()
+        if not candidate.is_relative_to(traces_root):
+            raise TracePathError(f"trace path escapes store: {relpath}")
+        return candidate
+
+    def _remove_replaced_file(self, old_relpath: str, new_path: Path) -> None:
+        try:
+            old_path = self._contained_path(old_relpath)
+        except TracePathError:
+            return
+        if old_path != new_path.resolve() and old_path.is_file():
+            old_path.unlink()
 
     def _index_row(self, trace_id: str) -> TraceIndexEntry | None:
         with self._connect() as conn:
@@ -160,12 +172,12 @@ def _preview(text: str) -> str:
 
 
 def _entry_from_trace(trace: Trace, relpath: str, fmt: FormatName) -> TraceIndexEntry:
-    dumped = trace.model_dump(mode="json")
     meta = trace.run_metadata
+    created_at = meta.model_dump(mode="json")["created_at"]
     return TraceIndexEntry(
         trace_id=str(meta.trace_id),
         schema_version=trace.schema_version,
-        created_at=dumped["run_metadata"]["created_at"],
+        created_at=created_at,
         model_name=trace.model.name,
         model_provider=trace.model.provider,
         prompt_preview=_preview(meta.prompt),
@@ -174,6 +186,24 @@ def _entry_from_trace(trace: Trace, relpath: str, fmt: FormatName) -> TraceIndex
         logits_mode=meta.logits.mode,
         relpath=relpath,
         format=fmt,
+    )
+
+
+def _entry_params(
+    entry: TraceIndexEntry,
+) -> tuple[str, str, str, str, str, str, str, int, str, str, str]:
+    return (
+        entry.trace_id,
+        entry.schema_version,
+        entry.created_at,
+        entry.model_name,
+        entry.model_provider,
+        entry.prompt_preview,
+        entry.output_preview,
+        entry.event_count,
+        entry.logits_mode,
+        entry.relpath,
+        entry.format,
     )
 
 

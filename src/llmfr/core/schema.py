@@ -131,10 +131,16 @@ class LogitsCapture(FrozenModel):
 
     @model_validator(mode="after")
     def _mode_fields(self) -> Self:
-        if self.mode == "topk" and self.k is None:
-            raise ValueError("logits.mode=topk requires k")
-        if self.mode == "none" and not self.unavailable_reason:
-            raise ValueError("logits.mode=none requires unavailable_reason")
+        if self.mode == "topk":
+            if self.k is None:
+                raise ValueError("logits.mode=topk requires k")
+            if self.unavailable_reason is not None:
+                raise ValueError("logits.mode=topk forbids unavailable_reason")
+        elif self.mode == "none":
+            if not self.unavailable_reason:
+                raise ValueError("logits.mode=none requires unavailable_reason")
+            if self.k is not None:
+                raise ValueError("logits.mode=none forbids k")
         return self
 
 

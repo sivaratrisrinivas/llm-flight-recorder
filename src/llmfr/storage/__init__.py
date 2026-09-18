@@ -1,3 +1,3 @@
-from llmfr.storage.store import DuplicateTraceIdError, TraceIndexEntry, TraceStore
+from llmfr.storage.store import DuplicateTraceIdError, TraceIndexEntry, TracePathError, TraceStore
 
-__all__ = ["DuplicateTraceIdError", "TraceIndexEntry", "TraceStore"]
+__all__ = ["DuplicateTraceIdError", "TraceIndexEntry", "TracePathError", "TraceStore"]

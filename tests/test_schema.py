@@ -128,6 +128,16 @@ def test_logits_topk_requires_k() -> None:
         LogitsCapture(mode="topk")
 
 
+def test_logits_topk_forbids_unavailable_reason() -> None:
+    with pytest.raises(ValidationError, match="forbids unavailable_reason"):
+        LogitsCapture(mode="topk", k=5, unavailable_reason="should not be set")
+
+
+def test_logits_none_forbids_k() -> None:
+    with pytest.raises(ValidationError, match="forbids k"):
+        LogitsCapture(mode="none", k=5, unavailable_reason="hosted API")
+
+
 def test_truncated_visible_context_is_suffix() -> None:
     trace = make_trace(visible_limit=2)
     event = trace.events[1]

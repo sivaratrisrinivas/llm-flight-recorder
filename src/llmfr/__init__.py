@@ -23,13 +23,14 @@ from llmfr.core import (
     loads_jsonl,
     migrate_payload,
 )
-from llmfr.storage import DuplicateTraceIdError, TraceIndexEntry, TraceStore
+from llmfr.storage import DuplicateTraceIdError, TraceIndexEntry, TracePathError, TraceStore
 
 __all__ = [
     "DEFAULT_TOP_K",
     "MAX_TOP_K",
     "SCHEMA_VERSION",
     "DuplicateTraceIdError",
+    "TracePathError",
     "Environment",
     "Event",
     "GenerationConfig",
