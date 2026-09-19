@@ -261,7 +261,9 @@ def test_hosted_api_without_logits_is_unknown_runtime() -> None:
     first = result.first_divergence
     assert first is not None
     assert first.classification == "unknown/runtime"
-    assert any("refusing to invent logits" in note for note in result.notes)
+    assert first.reason is not None
+    assert "refusing to invent logits" in first.reason
+    assert any("logits.mode=none" in note for note in result.notes)
 
 
 def test_hosted_api_seed_split_is_sampling_without_inventing_logits() -> None:

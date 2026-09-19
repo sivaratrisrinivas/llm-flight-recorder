@@ -174,6 +174,12 @@ def _classify_first(
 
     assert event_a is not None and event_b is not None
 
+    if step == 0 and trace_a.run_metadata.prompt != trace_b.run_metadata.prompt:
+        return (
+            "prompt/history",
+            "prompt text differs at the start of the traces",
+        )
+
     if "full_history" in differences:
         if _tokenizer_explains_history(step, trace_a, trace_b):
             return (
@@ -186,6 +192,11 @@ def _classify_first(
         )
 
     if "full_history_text" in differences:
+        if trace_a.run_metadata.prompt != trace_b.run_metadata.prompt:
+            return (
+                "prompt/history",
+                "prompt text differs; full_history token ids match",
+            )
         return (
             "tokenizer",
             "full_history token ids match; decoded text differs",
