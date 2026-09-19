@@ -33,6 +33,10 @@ hf = [
   "torch>=2.2",
   "transformers>=4.40",
 ]
+openai = [
+  "openai>=1.40",
+  "tiktoken>=0.7",
+]
 
 [project.scripts]
 llmfr = "llmfr.cli:main"
@@ -80,5 +84,9 @@ module = [
   "transformers.*",
   "huggingface_hub",
   "huggingface_hub.*",
+  "openai",
+  "openai.*",
+  "tiktoken",
+  "tiktoken.*",
 ]
 ignore_missing_imports = true

@@ -137,3 +137,25 @@ def test_top_k_candidates_rejects_empty_logits() -> None:
     )
     with pytest.raises(ValueError, match="no logits"):
         step.top_k_candidates(5, decode=str)
+
+
+def test_top_k_candidates_from_captured_logprobs_without_logits() -> None:
+    captured = (
+        TopKCandidate(rank=1, token_id=9, token="a", logit=None, logprob=-0.1, prob=0.9),
+        TopKCandidate(rank=2, token_id=8, token="b", logit=None, logprob=-2.0, prob=0.1),
+    )
+    step = StepLogits(
+        token_ids=(1,),
+        requested_token_ids=(1,),
+        logits=(),
+        truncated=False,
+        top_logprobs=captured,
+        backend_sampled_token_id=9,
+        backend_sampled_logprob=-0.1,
+    )
+    top = step.top_k_candidates(2, decode=str)
+    assert [candidate.token_id for candidate in top] == [9, 8]
+    assert all(candidate.logit is None for candidate in top)
+    assert top[0].logprob == -0.1
+    with pytest.raises(ValueError, match="no logits"):
+        _ = step.greedy_token_id

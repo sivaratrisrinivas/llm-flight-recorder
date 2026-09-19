@@ -68,8 +68,10 @@ this runtime permits and report what matched.
 
 5. **Fail closed when replay would have to guess.** `logits.mode=none`,
    sampling without a seed, missing Hub revision, `supports_replay=False`,
-   and unimplemented sampler fields (`top_p`, `repetition_penalty`) yield
-   `not_replayable` rather than a fake success.
+   unimplemented sampler fields (`top_p`, `repetition_penalty`), and any
+   `model.provider=openai` trace yield `not_replayable` rather than a fake
+   success. OpenAI `top_logprobs` are not a vocabulary of raw logits, and
+   hosted sampling is not a pinned HF CPU checkpoint.
 
 6. **Out of scope:** first-divergence UI (M5), downstream-effects (M6),
    polished CLI (M7). Partial token match is reported as

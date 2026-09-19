@@ -105,6 +105,9 @@ def test_case_b_seed_split_is_sampling() -> None:
     assert first is not None
     assert first.classification == "sampling"
     assert "generation_config.seed" in {diff.field for diff in result.config_diffs}
+    assert first.reason is not None
+    assert "captured logits" in first.reason
+    assert "captured scores" not in first.reason
     report = format_compare_result(result)
     assert "class: sampling" in report
     assert "downstream effects" in report
@@ -255,6 +258,9 @@ def test_decoding_config_same_logits_different_temperature() -> None:
     assert first.classification == "decoding config"
     assert "sampled_token" in first.differences
     assert "raw_logits" not in first.differences
+    assert first.reason is not None
+    assert first.reason.startswith("captured logits match")
+    assert "captured scores" not in first.reason
     fields = {diff.field for diff in result.config_diffs}
     assert "generation_config.temperature" in fields
     assert "generation_config.do_sample" in fields
@@ -278,6 +284,12 @@ def test_probability_distribution_when_logits_match() -> None:
     assert first.classification == "probability distribution"
     assert "probabilities" in first.differences
     assert "raw_logits" not in first.differences
+    assert first.reason is not None
+    assert first.reason.startswith("captured logits and decoding config match")
+    assert "captured scores" not in first.reason
+    assert result.enabling_summary is not None
+    assert result.enabling_summary.startswith("captured logits and decoding config match")
+    assert "captured scores" not in result.enabling_summary
 
 
 def test_hosted_api_without_logits_is_unknown_runtime() -> None:
