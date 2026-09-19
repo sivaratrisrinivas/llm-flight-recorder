@@ -23,24 +23,30 @@ pip install --index-url https://download.pytorch.org/whl/cpu torch
 pip install --upgrade-strategy only-if-needed -e ".[dev,hf]"
 ```
 
-Default model is `sshleifer/tiny-gpt2`. Store directory defaults to `.llmfr`.
+Default model is `sshleifer/tiny-gpt2`. Store directory defaults to `.llmfr`. Record twice, then compare:
 
 ```bash
-A=$(llmfr record "Hello" --store .llmfr --max-new-tokens 8 --greedy)
-B=$(llmfr record "Hello" --store .llmfr --max-new-tokens 8 --greedy)
-llmfr inspect "$A" --store .llmfr --step 0
+A=$(llmfr record "Hello" --store .llmfr --max-new-tokens 6 --seed 1)
+B=$(llmfr record "Hello" --store .llmfr --max-new-tokens 6 --seed 2)
 llmfr compare "$A" "$B" --store .llmfr
-llmfr replay "$A" --store .llmfr
 ```
 
-`--greedy` keeps both records on the same argmax path. Different `--seed` values are the usual split case. Compare and inspect also take JSON/JSONL files:
+That is Demo 1: same prompt, different `--seed`. Compare names the first split; later token, context, and logit diffs are downstream, not a second root cause. Demo 2 keeps the seed and changes temperature:
 
 ```bash
-llmfr compare path/a.jsonl path/b.jsonl
-llmfr inspect path/a.jsonl --step 0
+C=$(llmfr record "Hello" --store .llmfr --max-new-tokens 6 --seed 1 --temperature 0.7)
+D=$(llmfr record "Hello" --store .llmfr --max-new-tokens 6 --seed 1 --temperature 1.2)
+llmfr compare "$C" "$D" --store .llmfr
 ```
 
-`replay` takes a store `trace_id` only. Exit 0 means compare traces identical, or replay status `reproduced`. Exit 1 is an expected failure (including a diverged compare). Exit 2 is a usage error. `llmfr --help` lists the rest (`validate`, `topk`, `version`).
+Captured `sshleifer/tiny-gpt2` output (real logits, not invented) is in `docs/demo.md`. Replay the exact reports without a model:
+
+```bash
+llmfr compare examples/demo/demo1_a.jsonl examples/demo/demo1_b.jsonl
+llmfr inspect examples/demo/demo1_a.jsonl --step 0
+```
+
+`--greedy` on both records is the identical path (exit 0). `llmfr inspect TRACE --step N` shows history vs visible context plus that step's top-k. `llmfr replay TRACE_ID` needs a store id. Exit 0 means compare traces identical, or replay status `reproduced`. Exit 1 is an expected failure (including a diverged compare). Exit 2 is a usage error. `llmfr --help` lists the rest (`validate`, `topk`, `version`).
 
 ## Essentials
 
@@ -48,4 +54,5 @@ llmfr inspect path/a.jsonl --step 0
 - v1 is local-only: SQLite index plus JSON/JSONL files keyed by `trace_id`. Nothing is sent to a hosted store.
 - Callers can redact prompt, output, sampled-token strings, top-k token strings, and context text before write (`redact_trace`, `llmfr record --redact`) or skip the store (`persist=False`, `--no-persist`). Local persist stays the default.
 - If a backend does not expose real logits or logprobs, the trace records that. llmfr does not invent scores.
-- Design notes: `docs/adr/`.
+- v1 does not claim a compare UI, hosted-API logits, LangChain, or a Kafka/Redis/Postgres store. Known limits and a short roadmap: `docs/demo.md`.
+- Design notes (do not duplicate here): `docs/adr/`.

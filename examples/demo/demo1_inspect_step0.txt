@@ -1,0 +1,23 @@
+trace d2c602db-4afb-49e3-89bc-91e941bd0dcc  step 0 of 6
+
+sampled token
+  'ether' (id=6750)
+  rank=17556  logit= 0.0107  prob= 0.0000  logprob=-10.8146
+
+full_history
+  tokens=1  truncated=false
+  ids=[15496]
+  text='Hello'
+
+model_visible_context
+  tokens=1  truncated=false
+  ids=[15496]
+  text='Hello'
+  equals full_history (model saw the full prefix)
+
+top-k
+   1. ' stairs'        id=16046     logit= 0.1269  prob= 0.0000  logprob=-10.6985
+   2. ' vendors'       id=17192     logit= 0.1252  prob= 0.0000  logprob=-10.7001
+   3. ' intermittent'  id=38361     logit= 0.1149  prob= 0.0000  logprob=-10.7104
+   4. ' hauled'        id=43423     logit= 0.1079  prob= 0.0000  logprob=-10.7174
+   5. ' Brew'          id=9702      logit= 0.1065  prob= 0.0000  logprob=-10.7188

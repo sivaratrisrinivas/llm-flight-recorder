@@ -297,6 +297,69 @@ def test_cli_record_twice_then_compare_identical(
     assert "FIRST BEHAVIORAL DIVERGENCE" in compare_out
 
 
+def _flat_cli_adapter() -> FakeCausalLMAdapter:
+    peaked_after = {
+        (1, 0): (5.0, 0.0, 0.0, 0.0),
+        (1, 1): (0.0, 5.0, 0.0, 0.0),
+        (1, 2): (0.0, 0.0, 5.0, 0.0),
+        (1, 3): (0.0, 0.0, 0.0, 5.0),
+    }
+    return FakeCausalLMAdapter(
+        prompt_ids=[1],
+        logits=(1.0, 1.0, 1.0, 1.0),
+        logits_for_prefix={(1,): (1.0, 1.0, 1.0, 1.0), **peaked_after},
+    )
+
+
+def test_cli_record_twice_different_seeds_names_first_divergence(
+    tmp_path: Path, capsys: CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("llmfr.cli._build_hf_adapter", lambda **_kwargs: _flat_cli_adapter())
+    store = str(tmp_path)
+    assert (
+        run(
+            [
+                "record",
+                "hello",
+                "--store",
+                store,
+                "--max-new-tokens",
+                "2",
+                "--seed",
+                "42",
+            ]
+        )
+        == 0
+    )
+    id_a = capsys.readouterr().out.strip()
+    monkeypatch.setattr("llmfr.cli._build_hf_adapter", lambda **_kwargs: _flat_cli_adapter())
+    assert (
+        run(
+            [
+                "record",
+                "hello",
+                "--store",
+                store,
+                "--max-new-tokens",
+                "2",
+                "--seed",
+                "43",
+            ]
+        )
+        == 0
+    )
+    id_b = capsys.readouterr().out.strip()
+    code = run(["compare", id_a, id_b, "--store", store])
+    compare_out = capsys.readouterr().out
+    assert code == 1
+    assert "diverged" in compare_out
+    assert "FIRST BEHAVIORAL DIVERGENCE" in compare_out
+    assert "class:" in compare_out
+    assert "generation_config.seed" in compare_out
+    assert "downstream effects" in compare_out
+    assert "not a new root cause" in compare_out
+
+
 def test_cli_missing_store_is_exit_1(tmp_path: Path, capsys: CaptureFixture[str]) -> None:
     missing = tmp_path / "no-store"
     code = run(["replay", "11111111-1111-4111-8111-111111111111", "--store", str(missing)])
