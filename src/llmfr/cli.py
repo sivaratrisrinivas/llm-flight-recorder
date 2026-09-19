@@ -43,7 +43,7 @@ from llmfr.core.migrate import UnsupportedSchemaVersionError
 from llmfr.core.schema import GenerationConfig, Trace, load_path
 from llmfr.core.version import DEFAULT_TOP_K, SCHEMA_VERSION, __version__
 from llmfr.privacy import redact_trace
-from llmfr.record import record_generation
+from llmfr.record import load_prompt_file, record_generation, record_prompt_batch
 from llmfr.replay import BIT_IDENTICAL_CAVEAT, ReplayResult, replay_trace
 from llmfr.storage import TraceStore
 
@@ -179,9 +179,26 @@ def topk(
 @app.command()
 def record(
     prompt: Annotated[
-        str,
-        typer.Argument(metavar="PROMPT", help="Prompt text to encode and generate from."),
-    ],
+        str | None,
+        typer.Argument(
+            metavar="PROMPT",
+            help=("Prompt text to encode and generate from. Mutually exclusive with --prompts."),
+        ),
+    ] = None,
+    prompts: Annotated[
+        str | None,
+        typer.Option(
+            "--prompts",
+            help=(
+                "Prompt list file. .jsonl: one JSON object or string per line "
+                "(required prompt; optional id, seed, temperature, "
+                "max_new_tokens, greedy, tags). .json: a JSON array of those, "
+                "or one object/string. Other files: one prompt per line. "
+                "Blank lines skipped. Mutually exclusive with PROMPT. "
+                "See docs/adr/0010-batch-record.md."
+            ),
+        ),
+    ] = None,
     store: Annotated[
         str,
         typer.Option("--store", help="TraceStore directory (SQLite index plus traces/)."),
@@ -272,13 +289,16 @@ def record(
 ) -> None:
     """Record a short generation into TraceStore and print trace_id.
 
-    Exit 0 prints the new trace_id on stdout. Exit 1 for expected failures
-    (missing Hugging Face extra, missing OPENAI_API_KEY, invalid config, I/O).
-    Does not invent logits. Does not accept an API key flag.
+    Pass PROMPT for one run, or --prompts FILE for a batch (one trace_id per
+    prompt, in file order). Exit 0 on success. Exit 1 for expected failures
+    (missing Hugging Face extra, missing OPENAI_API_KEY, invalid config, I/O,
+    empty or invalid prompt file). Does not invent logits. Does not accept
+    an API key flag. --redact and --no-persist apply to every batch item.
     """
     raise typer.Exit(
         _cmd_record(
             prompt=prompt,
+            prompts=prompts,
             store=store,
             max_new_tokens=max_new_tokens,
             seed=seed,
@@ -379,7 +399,8 @@ def inspect(
 
 def _cmd_record(
     *,
-    prompt: str,
+    prompt: str | None,
+    prompts: str | None,
     store: str,
     max_new_tokens: int,
     seed: int | None,
@@ -394,7 +415,12 @@ def _cmd_record(
     persist: bool,
     redact: bool,
 ) -> int:
+    if prompt is None and prompts is None:
+        return _usage("PROMPT or --prompts is required")
+    if prompt is not None and prompts is not None:
+        return _usage("PROMPT and --prompts are mutually exclusive")
     try:
+        jobs = None if prompts is None else load_prompt_file(Path(prompts))
         adapter = _build_record_adapter(
             model_id=model,
             provider=provider,
@@ -408,16 +434,34 @@ def _cmd_record(
             do_sample=not greedy,
             seed=seed,
         )
+        store_obj = None if not persist else TraceStore(Path(store), create=True)
+        redactor = redact_trace if redact else None
+        if jobs is not None:
+            traces = record_prompt_batch(
+                adapter,
+                jobs,
+                generation=generation,
+                store=store_obj,
+                capture_k=capture_k,
+                fmt=fmt,
+                source="cli",
+                persist=persist,
+                redact=redactor,
+            )
+            for recorded in traces:
+                sys.stdout.write(f"{recorded.run_metadata.trace_id}\n")
+            return EXIT_OK
+        assert prompt is not None
         recorded = record_generation(
             adapter,
             prompt,
             generation=generation,
-            store=None if not persist else TraceStore(Path(store), create=True),
+            store=store_obj,
             capture_k=capture_k,
             fmt=fmt,
             source="cli",
             persist=persist,
-            redact=redact_trace if redact else None,
+            redact=redactor,
         )
     except _RECORD_ERRORS as exc:
         return _fail(exc)
@@ -588,3 +632,8 @@ def _fail(exc: BaseException | str) -> int:
     message = exc if isinstance(exc, str) else str(exc)
     sys.stderr.write(f"error: {message}\n")
     return EXIT_FAIL
+
+
+def _usage(message: str) -> int:
+    sys.stderr.write(f"error: {message}\n")
+    return EXIT_USAGE
