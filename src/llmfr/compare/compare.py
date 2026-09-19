@@ -143,15 +143,18 @@ def _logit_fields_differ(event_a: Event, event_b: Event) -> bool:
 
 
 def _prob_fields_differ(event_a: Event, event_b: Event) -> bool:
-    if event_a.sampled_prob != event_b.sampled_prob:
-        return True
-    if event_a.sampled_logprob != event_b.sampled_logprob:
-        return True
     overlap = min(len(event_a.top_k), len(event_b.top_k))
     for cand_a, cand_b in zip(event_a.top_k[:overlap], event_b.top_k[:overlap], strict=True):
         if cand_a.prob != cand_b.prob:
             return True
         if cand_a.logprob != cand_b.logprob:
+            return True
+    # Sampled token scores belong to the drawn token. When the draw differs,
+    # those fields are Case B (sampling), not a probability-distribution split.
+    if event_a.sampled_token_id == event_b.sampled_token_id:
+        if event_a.sampled_prob != event_b.sampled_prob:
+            return True
+        if event_a.sampled_logprob != event_b.sampled_logprob:
             return True
     return False
 

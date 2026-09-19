@@ -1,4 +1,4 @@
-compare a=d2c602db-4afb-49e3-89bc-91e941bd0dcc b=db4fc5ed-d9f4-47ab-8f94-198ab69345e9
+compare a=7d2b9710-9131-470d-abf8-91cb5374b155 b=51594c38-fe66-4436-8bb3-bb41e39dfaf3
 
 CONFIG DIFFERENCE
   generation_config.seed: 1 vs 2
@@ -9,14 +9,14 @@ EXECUTION
 
 FIRST BEHAVIORAL DIVERGENCE
   step 0
-  class: probability distribution
-  differences: probabilities, sampled_token
+  class: sampling
+  differences: sampled_token
   sampled token: 'ether' (id=6750) vs ' titan' (id=48047)
-  reason: captured logits and decoding config match; stored probabilities differ
+  reason: same context, captured logits, and decoding config; sampled tokens differ
 
 LIKELY ENABLING CONFIG
-  (none recorded)
-  captured logits and decoding config match; stored probabilities differ without a named config cause
+  generation_config.seed: 1 vs 2
+  seed difference likely enabled this sampling split
 
 Steps 1+: downstream effects
   later context, logit, and token diffs are not a new root cause

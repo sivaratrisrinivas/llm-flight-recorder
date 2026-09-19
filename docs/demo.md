@@ -21,7 +21,7 @@ llmfr compare examples/demo/demo1_a.jsonl examples/demo/demo1_b.jsonl
 Exit 1 (diverged). Output captured 2026-09-19:
 
 ```
-compare a=d2c602db-4afb-49e3-89bc-91e941bd0dcc b=db4fc5ed-d9f4-47ab-8f94-198ab69345e9
+compare a=7d2b9710-9131-470d-abf8-91cb5374b155 b=51594c38-fe66-4436-8bb3-bb41e39dfaf3
 
 CONFIG DIFFERENCE
   generation_config.seed: 1 vs 2
@@ -32,14 +32,14 @@ EXECUTION
 
 FIRST BEHAVIORAL DIVERGENCE
   step 0
-  class: probability distribution
-  differences: probabilities, sampled_token
+  class: sampling
+  differences: sampled_token
   sampled token: 'ether' (id=6750) vs ' titan' (id=48047)
-  reason: captured logits and decoding config match; stored probabilities differ
+  reason: same context, captured logits, and decoding config; sampled tokens differ
 
 LIKELY ENABLING CONFIG
-  (none recorded)
-  captured logits and decoding config match; stored probabilities differ without a named config cause
+  generation_config.seed: 1 vs 2
+  seed difference likely enabled this sampling split
 
 Steps 1+: downstream effects
   later context, logit, and token diffs are not a new root cause
@@ -58,13 +58,13 @@ diverged
 Read it in this order:
 
 1. CONFIG DIFFERENCE lists the seed change (`1` vs `2`).
-2. FIRST BEHAVIORAL DIVERGENCE names step 0. Captured top-k logits still match, so the class is `probability distribution` (stored `sampled_prob` / `sampled_logprob` differ because different tokens were drawn). Compare does not relabel that as `sampling` to make the seed look like a named cause. The seed stays in the config section.
+2. FIRST BEHAVIORAL DIVERGENCE names step 0 as `sampling`. Captured top-k logits and decoding config still match; different draws are Case B, including a seed change. LIKELY ENABLING CONFIG names that seed. The stored `sampled_prob` of two different tokens is not a `probability distribution` split.
 3. Steps 1+ are downstream. Later full_history, visible-context, logit, and token diffs are not a new root cause.
 
 Step 0 inspect of `demo1_a` (`llmfr inspect examples/demo/demo1_a.jsonl --step 0`):
 
 ```
-trace d2c602db-4afb-49e3-89bc-91e941bd0dcc  step 0 of 6
+trace 7d2b9710-9131-470d-abf8-91cb5374b155  step 0 of 6
 
 sampled token
   'ether' (id=6750)
@@ -108,7 +108,7 @@ llmfr compare examples/demo/demo2_a.jsonl examples/demo/demo2_b.jsonl
 Exit 1 (diverged). Output captured 2026-09-19:
 
 ```
-compare a=58d7a0d0-e1c8-4f95-8c37-a999f426c936 b=8b8f2298-e93c-48fe-9ab5-57e1355d1f75
+compare a=94b4c5ea-08c7-48d5-8848-5d90df0d610c b=000982fd-cbfb-4ad1-8711-8c5edb6f9d7c
 
 CONFIG DIFFERENCE
   generation_config.temperature: 0.7 vs 1.2
@@ -120,7 +120,7 @@ EXECUTION
 FIRST BEHAVIORAL DIVERGENCE
   step 0
   class: decoding config
-  differences: probabilities, sampled_token
+  differences: sampled_token
   sampled token: 'ician' (id=6749) vs 'ether' (id=6750)
   reason: captured logits match; temperature, do_sample, or other sampler settings differ
 
@@ -133,7 +133,7 @@ Steps 1+: downstream effects
   step 1 (not root cause): full_history, model_visible_context, raw_logits, probabilities ('IENCE' (id=42589) vs 'IENCE' (id=42589))
   step 2 (not root cause): full_history, model_visible_context, raw_logits ('otomy' (id=38385) vs 'otomy' (id=38385))
   step 3 (not root cause): full_history, model_visible_context, raw_logits (' Naz' (id=12819) vs ' Naz' (id=12819))
-  step 4 (not root cause): full_history, model_visible_context, raw_logits, probabilities, sampled_token ('pex' (id=24900) vs 'buster' (id=24899))
+  step 4 (not root cause): full_history, model_visible_context, raw_logits, sampled_token ('pex' (id=24900) vs 'buster' (id=24899))
   step 5 (not root cause): full_history, model_visible_context, raw_logits, probabilities (' peas' (id=22589) vs ' peas' (id=22589))
 
 notes
@@ -152,7 +152,7 @@ A config-only compare (seed differs, recorded tokens still match) names the conf
 python scripts/capture_demo.py --backend hf
 ```
 
-Writes `examples/demo/*.jsonl` and the sibling compare/inspect captures. Inspect and compare subprocesses must succeed (non-empty stdout); a failed inspect is not written. `--backend fake` never overwrites `examples/demo` (even with `--force`): flat fake logits can classify a seed split as `sampling` and would desync inspect from the JSONL. For a scratch fake capture that also writes inspect:
+Writes `examples/demo/*.jsonl` and the sibling compare/inspect captures. Inspect and compare subprocesses must succeed (non-empty stdout); a failed inspect is not written. `--backend fake` never overwrites `examples/demo` (even with `--force`): that directory is the tiny-gpt2 CLI capture used by this page. For a scratch fake capture that also writes inspect:
 
 ```bash
 python scripts/capture_demo.py --backend fake --out /tmp/llmfr-demo-fake

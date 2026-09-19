@@ -111,6 +111,33 @@ def test_case_b_seed_split_is_sampling() -> None:
     assert "not a new root cause" in report
 
 
+def test_case_b_other_token_sampled_prob_is_sampling_not_distribution() -> None:
+    """Different draws store different model probs; Case B, not a distribution split."""
+    trace_a = make_trace()
+    event0 = trace_a.events[0].model_copy(
+        update={
+            "sampled_token_id": 202,
+            "sampled_token": "alt2",
+            "sampled_rank": 2,
+            "sampled_prob": 0.05,
+            "sampled_logprob": -3.0,
+        }
+    )
+    trace_b = make_trace(
+        trace_id=TRACE_ID_B,
+        generation=trace_a.generation_config.model_copy(update={"seed": 99}),
+    ).model_copy(update={"events": [event0, make_trace().events[1]]})
+    result = compare_traces(trace_a, trace_b)
+    first = result.first_divergence
+    assert first is not None
+    assert first.classification == "sampling"
+    assert "sampled_token" in first.differences
+    assert "probabilities" not in first.differences
+    assert "raw_logits" not in first.differences
+    assert {diff.field for diff in result.likely_enabling_config} == {"generation_config.seed"}
+    assert result.enabling_summary == "seed difference likely enabled this sampling split"
+
+
 def test_case_e_later_logit_and_context_diffs_are_downstream() -> None:
     trace_a, trace_b = _seeded_pair()
     result = compare_traces(trace_a, trace_b)

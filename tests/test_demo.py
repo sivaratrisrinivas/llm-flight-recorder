@@ -53,7 +53,8 @@ def test_demo_markdown_embeds_captured_reports() -> None:
         captured = (CAPTURES / name).read_text(encoding="utf-8").strip()
         assert captured in demo
     assert "not a new root cause" in demo
-    assert "class: probability distribution" in demo
+    assert "class: sampling" in demo
+    assert "seed difference likely enabled this sampling split" in demo
     assert "class: decoding config" in demo
     assert "generation_config.seed: 1 vs 2" in demo
     assert "generation_config.temperature: 0.7 vs 1.2" in demo
