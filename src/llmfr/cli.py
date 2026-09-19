@@ -37,6 +37,7 @@ _RECORD_ERRORS = (
     OSError,
     TypeError,
     ValueError,
+    ValidationError,
     RuntimeError,
     HuggingFaceExtraMissingError,
 )

@@ -8,7 +8,7 @@ from pytest import CaptureFixture
 
 from llmfr.adapters.huggingface import HuggingFaceCausalLMAdapter, HuggingFaceExtraMissingError
 from llmfr.cli import build_parser, run
-from llmfr.core.schema import dumps_json
+from llmfr.core.schema import LogitsCapture, dumps_json
 from llmfr.core.version import SCHEMA_VERSION, __version__
 from llmfr.storage import TraceStore
 from tests.factories import make_trace
@@ -82,6 +82,24 @@ def test_cli_record_prints_trace_id(
     assert len(loaded.events) == 2
     assert loaded.run_metadata.source == "cli"
     assert loaded.run_metadata.prompt == "hello"
+
+
+def test_cli_record_validation_error(
+    tmp_path: Path, capsys: CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        "llmfr.cli._build_hf_adapter",
+        lambda **_kwargs: FakeCausalLMAdapter(prompt_ids=[1]),
+    )
+
+    def _invalid_trace(*_args: object, **_kwargs: object) -> None:
+        LogitsCapture(mode="topk")
+
+    monkeypatch.setattr("llmfr.cli.record_generation", _invalid_trace)
+    assert run(["record", "hello", "--store", str(tmp_path)]) == 1
+    err = capsys.readouterr().err
+    assert "error:" in err
+    assert "Traceback" not in err
 
 
 def test_cli_record_missing_hf_extra(
