@@ -105,7 +105,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     compare = sub.add_parser(
         "compare",
-        help="Compare two traces and report first divergence (Milestone 5, minimal)",
+        help="Compare two traces: first divergence vs downstream effects",
     )
     compare.add_argument("trace_a", help="Trace file path or TraceStore trace_id")
     compare.add_argument("trace_b", help="Trace file path or TraceStore trace_id")

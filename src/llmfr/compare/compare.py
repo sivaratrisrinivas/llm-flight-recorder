@@ -80,8 +80,9 @@ def compare_traces(trace_a: Trace, trace_b: Trace) -> CompareResult:
     if first is not None and downstream:
         notes.append(
             "Later context and logit diffs are downstream of the first "
-            "divergence, not a separate root cause."
+            "divergence, not a new root cause."
         )
+    enabling = _likely_enabling_config(first, config_diffs)
     return CompareResult(
         trace_a=str(trace_a.run_metadata.trace_id),
         trace_b=str(trace_b.run_metadata.trace_id),
@@ -91,6 +92,11 @@ def compare_traces(trace_a: Trace, trace_b: Trace) -> CompareResult:
         downstream=tuple(downstream),
         notes=tuple(notes),
         steps=tuple(step_diffs),
+        matched_prefix_steps=_matched_prefix_steps(first, trace_a, trace_b),
+        event_count_a=len(trace_a.events),
+        event_count_b=len(trace_b.events),
+        likely_enabling_config=enabling,
+        enabling_summary=_enabling_summary(first, enabling),
     )
 
 
@@ -441,3 +447,116 @@ def _fmt_value(value: Any) -> str | None:
     if isinstance(value, str):
         return value
     return json.dumps(value, ensure_ascii=False, default=str)
+
+
+_ENABLING_FIELD_SELECTORS: dict[DivergenceClass, tuple[str, ...]] = {
+    "prompt/history": (
+        "run_metadata.prompt",
+        "run_metadata.prompt_token_ids",
+    ),
+    "tokenizer": (
+        "model.tokenizer",
+        "run_metadata.prompt_token_ids",
+    ),
+    "model-visible context": (),
+    "model/version": (
+        "model.provider",
+        "model.name",
+        "model.revision",
+    ),
+    "raw-logit": (
+        "model.dtype",
+        "model.architecture",
+        "environment.device",
+        "environment.accelerator",
+        "environment.library_versions.",
+        "environment.python_version",
+        "environment.platform",
+    ),
+    "decoding config": (
+        "generation_config.temperature",
+        "generation_config.top_p",
+        "generation_config.top_k",
+        "generation_config.do_sample",
+        "generation_config.repetition_penalty",
+        "generation_config.stop",
+        "generation_config.max_new_tokens",
+    ),
+    "probability distribution": (),
+    "sampling": ("generation_config.seed",),
+    "unknown/runtime": (
+        "run_metadata.logits.mode",
+        "run_metadata.logits.k",
+        "run_metadata.logits.unavailable_reason",
+        "environment.device",
+        "environment.accelerator",
+    ),
+}
+
+
+def _matched_prefix_steps(first: FirstDivergence | None, trace_a: Trace, trace_b: Trace) -> int:
+    if first is None:
+        return min(len(trace_a.events), len(trace_b.events))
+    return first.step
+
+
+def _field_selected(field: str, selectors: tuple[str, ...]) -> bool:
+    for selector in selectors:
+        if selector.endswith("."):
+            if field.startswith(selector):
+                return True
+        elif field == selector:
+            return True
+    return False
+
+
+def _likely_enabling_config(
+    first: FirstDivergence | None, config_diffs: tuple[ConfigDiff, ...]
+) -> tuple[ConfigDiff, ...]:
+    if first is None:
+        return ()
+    selectors = _ENABLING_FIELD_SELECTORS[first.classification]
+    return tuple(diff for diff in config_diffs if _field_selected(diff.field, selectors))
+
+
+def _enabling_summary(
+    first: FirstDivergence | None, enabling: tuple[ConfigDiff, ...]
+) -> str | None:
+    if first is None:
+        return None
+    classification = first.classification
+    if classification == "prompt/history":
+        return "prompt or history difference likely enabled this first split"
+    if classification == "tokenizer":
+        return "tokenizer or prompt_token_ids difference likely enabled this first split"
+    if classification == "model-visible context":
+        return (
+            "model-visible window or truncation differs; "
+            "no generation_config field records the visible limit"
+        )
+    if classification == "model/version":
+        return "model id or revision difference likely enabled this first split"
+    if classification == "raw-logit":
+        if enabling:
+            return "environment or dtype difference likely enabled this raw-logit split"
+        return (
+            "captured logits differ with matching model identity; "
+            "no recorded config field explains the first split"
+        )
+    if classification == "decoding config":
+        return "sampler settings likely enabled this first split"
+    if classification == "probability distribution":
+        return (
+            "captured logits and decoding config match; "
+            "stored probabilities differ without a named config cause"
+        )
+    if classification == "sampling":
+        if any(diff.field == "generation_config.seed" for diff in enabling):
+            return "seed difference likely enabled this sampling split"
+        return "sampler draw differs; listed config diffs likely enabled this first split"
+    if any("logits" in diff.field for diff in enabling):
+        return (
+            "logits were not comparable; stored fields cannot name a logit cause "
+            "without inventing scores"
+        )
+    return "stored fields cannot name a config cause for this first split without inventing logits"

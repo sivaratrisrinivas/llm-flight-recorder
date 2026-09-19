@@ -68,7 +68,7 @@ Not in M3: replay, compare, or a polished record CLI.
   (`docs/adr/0005-deterministic-replay.md`)
 - Minimal `llmfr replay TRACE_ID` against the existing TraceStore layout
 
-## Milestone 5 (done on this branch)
+## Milestone 5 (done)
 
 - Two-trace compare. Config difference report covers seed, temperature,
   model id/revision, prompt/history, tokenizer, and other
@@ -84,7 +84,21 @@ Not in M3: replay, compare, or a polished record CLI.
 - Core classification tests use stored traces and the fake adapter. They
   do not invent logits for hosted `logits.mode=none` traces
 
-Not in M5: deep root-cause narrative (M6) or a polished CLI (M7).
+## Milestone 6 (done on this branch)
+
+- Compare report names root cause vs downstream effects in a fixed
+  section order: CONFIG DIFFERENCE, EXECUTION (where paths still match),
+  FIRST BEHAVIORAL DIVERGENCE, LIKELY ENABLING CONFIG, then Steps N+:
+  downstream effects
+- LIKELY ENABLING CONFIG is the subset of config diffs that likely
+  enabled the first split (seed for sampling, sampler fields for
+  decoding config). Unrelated diffs stay in CONFIG DIFFERENCE only
+- Later context, logit, and token diffs are labeled not a new root
+  cause. Case E stays correct: those later diffs are not a second class
+- Extends `llmfr compare` formatting and `CompareResult` fields
+  (`matched_prefix_steps`, `likely_enabling_config`). No new command
+
+Not in M6: polished CLI UX (M7) or a compare UI (M9).
 
 ## Install and test
 
@@ -92,7 +106,7 @@ Core (schema, storage, inspect CLI, recorder unit tests with a fake adapter):
 
 ```bash
 pip install -e ".[dev]"
-pytest tests/test_schema.py tests/test_store.py tests/test_sample.py tests/test_recorder.py tests/test_replay.py tests/test_compare.py tests/test_cli.py
+pytest tests/test_schema.py tests/test_store.py tests/test_sample.py tests/test_recorder.py tests/test_replay.py tests/test_compare.py tests/test_compare_report.py tests/test_cli.py
 ruff check src tests
 ruff format --check src tests
 mypy
@@ -134,11 +148,12 @@ llmfr compare path/a.jsonl path/b.jsonl
 - [x] **M2** Hugging Face adapter
 - [x] **M3** Recorder loop
 - [x] **M4** Replay
-- [x] **M5** Compare / first-divergence (this branch)
-- [ ] **M6** Downstream-effects / root-cause narrative
+- [x] **M5** Compare / first-divergence
+- [x] **M6** Downstream-effects / root-cause narrative (this branch)
 - [ ] **M7** Polished CLI UX
 
 Design notes: `docs/adr/0001-v1-trace-schema.md`, `docs/adr/0002-v1-storage.md`,
 `docs/adr/0003-hf-adapter-default-model.md`, `docs/adr/0004-recorder-loop.md`,
-`docs/adr/0005-deterministic-replay.md`, and
-`docs/adr/0006-first-divergence-compare.md`.
+`docs/adr/0005-deterministic-replay.md`,
+`docs/adr/0006-first-divergence-compare.md`, and
+`docs/adr/0007-root-cause-report.md`.
