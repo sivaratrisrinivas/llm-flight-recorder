@@ -16,7 +16,7 @@ DEMO_DIR = REPO / "examples" / "demo"
 FIXTURES = DEMO_DIR
 CAPTURES = DEMO_DIR
 
-README_SECTIONS = ("What", "Why", "How", "Essentials")
+README_SECTIONS = ("What", "Why", "Architecture", "How", "Essentials")
 ADR_LINKS = (
     "docs/adr/0001-v1-trace-schema.md",
     "docs/adr/0002-v1-storage.md",
@@ -29,6 +29,16 @@ ADR_LINKS = (
 )
 
 
+def _first_mermaid_block(text: str) -> str:
+    marker = "```mermaid"
+    start = text.find(marker)
+    assert start != -1
+    body_start = start + len(marker)
+    end = text.find("```", body_start)
+    assert end != -1
+    return text[body_start:end]
+
+
 def test_readme_is_what_why_how_essentials_only() -> None:
     text = README.read_text(encoding="utf-8")
     headings = [line[3:].strip() for line in text.splitlines() if line.startswith("## ")]
@@ -36,6 +46,31 @@ def test_readme_is_what_why_how_essentials_only() -> None:
     assert "Milestone" not in text
     assert "\u2014" not in text
     assert "\u2013" not in text
+    mermaid = _first_mermaid_block(text)
+    assert "prompt[prompt] --> rec" in mermaid
+    assert "prompt[prompt] --> adapter" not in mermaid
+    subgraph_start = mermaid.find("subgraph rec [recorder loop]")
+    assert subgraph_start != -1
+    subgraph_end = mermaid.find("\n  end", subgraph_start)
+    assert subgraph_end != -1
+    loop = mermaid[subgraph_start:subgraph_end]
+    loop_edges = (
+        "hist[full history] --> vis[model-visible context]",
+        "vis --> raw[raw logits]",
+        "raw --> temp[temperature logits]",
+        "temp --> probs[probs]",
+        "probs --> sample[sample]",
+        "sample --> append[append]",
+    )
+    found = [loop.find(edge) for edge in loop_edges]
+    assert all(index >= 0 for index in found)
+    assert found == sorted(found)
+    assert "adapter[adapter]" in loop
+    assert 'adapter -->|"encode once"| hist' in loop
+    assert 'adapter -->|"next_token_logits each step"| vis' in loop
+    assert "TraceStore" in text
+    assert "first divergence" in text
+    assert "downstream effects" in text
     assert "llmfr record" in text
     assert "--seed 1" in text
     assert "--seed 2" in text

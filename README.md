@@ -8,6 +8,44 @@
 
 Prompt and final-string logs cannot tell those apart. Two outputs can differ because the first sampled token differed, because the model-visible window was truncated, or because everything after an earlier split is downstream. A string diff treats all of that as one blob. llmfr stores per-step tokens, top-k scores when the model actually returned them, and both full history and model-visible context so compare can name the first divergence and label later diffs as not a new root cause.
 
+## Architecture
+
+Prompt goes to the recorder. The adapter encodes once, then supplies `next_token_logits` each step. TraceStore holds the result. Replay, compare, and inspect read stored traces. Compare does not call a model.
+
+```mermaid
+flowchart TD
+  prompt[prompt] --> rec
+  subgraph rec [recorder loop]
+    direction LR
+    hist[full history] --> vis[model-visible context]
+    vis --> raw[raw logits]
+    raw --> temp[temperature logits]
+    temp --> probs[probs]
+    probs --> sample[sample]
+    sample --> append[append]
+    adapter[adapter]
+    adapter -->|"encode once"| hist
+    adapter -->|"next_token_logits each step"| vis
+  end
+  rec --> store[TraceStore]
+  store --> sqlite[SQLite index]
+  store --> files[JSON / JSONL]
+  store --> replay[replay]
+  store --> compare[compare]
+  store --> inspect[inspect]
+```
+
+Compare two traces: config fields that differ, then the first causal split, then later diffs tagged as downstream of that split.
+
+```mermaid
+flowchart LR
+  a[trace A] --> cmp[compare]
+  b[trace B] --> cmp
+  cmp --> cfg[config diff]
+  cmp --> first[first divergence]
+  first --> down[downstream effects]
+```
+
 ## How
 
 Core package (schema, storage, CLI, tests with a fake adapter):
