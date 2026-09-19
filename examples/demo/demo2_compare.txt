@@ -1,0 +1,32 @@
+compare a=94b4c5ea-08c7-48d5-8848-5d90df0d610c b=000982fd-cbfb-4ad1-8711-8c5edb6f9d7c
+
+CONFIG DIFFERENCE
+  generation_config.temperature: 0.7 vs 1.2
+
+EXECUTION
+  recorded length: 6 vs 6 steps
+  same steps: (none; paths split at step 0)
+
+FIRST BEHAVIORAL DIVERGENCE
+  step 0
+  class: decoding config
+  differences: sampled_token
+  sampled token: 'ician' (id=6749) vs 'ether' (id=6750)
+  reason: captured logits match; temperature, do_sample, or other sampler settings differ
+
+LIKELY ENABLING CONFIG
+  generation_config.temperature: 0.7 vs 1.2
+  sampler settings likely enabled this first split
+
+Steps 1+: downstream effects
+  later context, logit, and token diffs are not a new root cause
+  step 1 (not root cause): full_history, model_visible_context, raw_logits, probabilities ('IENCE' (id=42589) vs 'IENCE' (id=42589))
+  step 2 (not root cause): full_history, model_visible_context, raw_logits ('otomy' (id=38385) vs 'otomy' (id=38385))
+  step 3 (not root cause): full_history, model_visible_context, raw_logits (' Naz' (id=12819) vs ' Naz' (id=12819))
+  step 4 (not root cause): full_history, model_visible_context, raw_logits, sampled_token ('pex' (id=24900) vs 'buster' (id=24899))
+  step 5 (not root cause): full_history, model_visible_context, raw_logits, probabilities (' peas' (id=22589) vs ' peas' (id=22589))
+
+notes
+  Later context and logit diffs are downstream of the first divergence, not a new root cause.
+
+diverged

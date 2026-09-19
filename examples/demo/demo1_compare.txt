@@ -1,0 +1,32 @@
+compare a=7d2b9710-9131-470d-abf8-91cb5374b155 b=51594c38-fe66-4436-8bb3-bb41e39dfaf3
+
+CONFIG DIFFERENCE
+  generation_config.seed: 1 vs 2
+
+EXECUTION
+  recorded length: 6 vs 6 steps
+  same steps: (none; paths split at step 0)
+
+FIRST BEHAVIORAL DIVERGENCE
+  step 0
+  class: sampling
+  differences: sampled_token
+  sampled token: 'ether' (id=6750) vs ' titan' (id=48047)
+  reason: same context, captured logits, and decoding config; sampled tokens differ
+
+LIKELY ENABLING CONFIG
+  generation_config.seed: 1 vs 2
+  seed difference likely enabled this sampling split
+
+Steps 1+: downstream effects
+  later context, logit, and token diffs are not a new root cause
+  step 1 (not root cause): full_history, model_visible_context, raw_logits, probabilities, sampled_token ('IENCE' (id=42589) vs ' humankind' (id=47634))
+  step 2 (not root cause): full_history, model_visible_context, raw_logits, probabilities, sampled_token ('otomy' (id=38385) vs ' Mich' (id=2843))
+  step 3 (not root cause): full_history, model_visible_context, raw_logits, probabilities, sampled_token (' Naz' (id=12819) vs 'ios' (id=4267))
+  step 4 (not root cause): full_history, model_visible_context, raw_logits, probabilities, sampled_token ('pex' (id=24900) vs ' ascending' (id=41988))
+  step 5 (not root cause): full_history, model_visible_context, raw_logits, probabilities, sampled_token (' peas' (id=22589) vs ' Bust' (id=36988))
+
+notes
+  Later context and logit diffs are downstream of the first divergence, not a new root cause.
+
+diverged

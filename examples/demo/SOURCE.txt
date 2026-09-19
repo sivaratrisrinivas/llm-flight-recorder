@@ -1,0 +1,7 @@
+backend=huggingface
+model=sshleifer/tiny-gpt2
+revision=5f91d94bd9cd7190a9f3216ff93cd1dd95f2c7be
+prompt='Hello'
+max_new_tokens=6
+demo1_seeds=1 2
+demo2_seed=1 temperatures=0.7 1.2
