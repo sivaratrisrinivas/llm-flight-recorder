@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from llmfr.storage.store import DuplicateTraceIdError, TracePathError, TraceStore
+from llmfr.storage.store import DuplicateTraceIdError, TracePathError, TraceStore, _index_error
 from tests.factories import make_trace
 
 
@@ -118,3 +118,81 @@ def test_get_rejects_relpath_outside_traces(tmp_path: Path) -> None:
         conn.commit()
     with pytest.raises(TracePathError, match="escapes store"):
         store.get("evil")
+
+
+def test_open_existing_missing_store_path(tmp_path: Path) -> None:
+    missing = tmp_path / "no-such-store"
+    with pytest.raises(FileNotFoundError, match="trace store not found"):
+        TraceStore(missing, create=False)
+
+
+def test_open_existing_missing_index(tmp_path: Path) -> None:
+    root = tmp_path / "empty-root"
+    root.mkdir()
+    with pytest.raises(FileNotFoundError, match="trace store index missing"):
+        TraceStore(root, create=False)
+
+
+def test_get_missing_trace_file(tmp_path: Path) -> None:
+    store = TraceStore(tmp_path)
+    trace = make_trace()
+    path = store.put(trace, fmt="jsonl")
+    path.unlink()
+    with pytest.raises(FileNotFoundError, match="trace file missing from store"):
+        store.get(str(trace.run_metadata.trace_id))
+
+
+def test_get_corrupt_trace_file(tmp_path: Path) -> None:
+    store = TraceStore(tmp_path)
+    trace = make_trace()
+    path = store.put(trace, fmt="jsonl")
+    path.write_text('{"record":"header"\n', encoding="utf-8")
+    with pytest.raises(ValueError, match="corrupt or partial"):
+        store.get(str(trace.run_metadata.trace_id))
+
+
+def test_get_non_utf8_trace_file_is_corrupt(tmp_path: Path) -> None:
+    store = TraceStore(tmp_path)
+    trace = make_trace()
+    path = store.put(trace, fmt="jsonl")
+    path.write_bytes(b"\xff\xfe not utf-8")
+    with pytest.raises(ValueError, match="corrupt or partial trace file") as excinfo:
+        store.get(str(trace.run_metadata.trace_id))
+    assert isinstance(excinfo.value.__cause__, UnicodeDecodeError)
+
+
+def test_get_permission_error_is_not_corrupt(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store = TraceStore(tmp_path)
+    trace = make_trace()
+    store.put(trace, fmt="jsonl")
+
+    def _denied(_self: Path, *_args: object, **_kwargs: object) -> str:
+        raise PermissionError("permission denied")
+
+    monkeypatch.setattr(Path, "read_text", _denied)
+    with pytest.raises(PermissionError, match="permission denied") as excinfo:
+        store.get(str(trace.run_metadata.trace_id))
+    assert "corrupt" not in str(excinfo.value)
+
+
+def test_corrupt_index_is_clear_error(tmp_path: Path) -> None:
+    root = tmp_path / "store"
+    root.mkdir()
+    (root / "traces").mkdir()
+    (root / "index.sqlite").write_text("not a sqlite database", encoding="utf-8")
+    with pytest.raises(ValueError, match="corrupt trace store index"):
+        TraceStore(root, create=False).list()
+
+
+def test_index_lock_is_not_labeled_corrupt() -> None:
+    err = _index_error(sqlite3.OperationalError("database is locked"))
+    assert str(err).startswith("trace store index error:")
+    assert "corrupt" not in str(err)
+
+
+def test_index_io_error_is_not_labeled_corrupt() -> None:
+    err = _index_error(sqlite3.OperationalError("disk I/O error"))
+    assert str(err).startswith("trace store index error:")
+    assert "corrupt" not in str(err)

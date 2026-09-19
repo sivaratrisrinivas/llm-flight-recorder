@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import sqlite3
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -73,14 +74,20 @@ class TraceIndexEntry(BaseModel):
 class TraceStore:
     """Directory of traces: index.sqlite plus traces/<stable-id>.json[l]."""
 
-    def __init__(self, root: Path) -> None:
+    def __init__(self, root: Path, *, create: bool = True) -> None:
         self.root = root
         self.traces_dir = root / "traces"
         self.db_path = root / "index.sqlite"
-        self.root.mkdir(parents=True, exist_ok=True)
-        self.traces_dir.mkdir(parents=True, exist_ok=True)
-        with self._connect() as conn:
-            conn.executescript(_SCHEMA_SQL)
+        if create:
+            self.root.mkdir(parents=True, exist_ok=True)
+            self.traces_dir.mkdir(parents=True, exist_ok=True)
+            with self._connect() as conn:
+                conn.executescript(_SCHEMA_SQL)
+            return
+        if not self.root.exists():
+            raise FileNotFoundError(f"trace store not found: {self.root}")
+        if not self.db_path.is_file():
+            raise FileNotFoundError(f"trace store index missing: {self.db_path}")
 
     def put(self, trace: Trace, fmt: FormatName = "jsonl", *, overwrite: bool = False) -> Path:
         trace_id = str(trace.run_metadata.trace_id)
@@ -113,10 +120,21 @@ class TraceStore:
     def get(self, trace_id: str) -> Trace:
         entry = self.get_index(trace_id)
         path = self._contained_path(entry.relpath)
-        text = path.read_text(encoding="utf-8")
-        if entry.format == "jsonl":
-            return loads_jsonl(text)
-        return loads_json(text)
+        if not path.is_file():
+            raise FileNotFoundError(
+                f"trace file missing from store: {entry.relpath} (trace_id {trace_id})"
+            )
+        try:
+            text = path.read_text(encoding="utf-8")
+            if entry.format == "jsonl":
+                return loads_jsonl(text)
+            return loads_json(text)
+        except OSError:
+            raise
+        except (TypeError, ValueError, json.JSONDecodeError) as exc:
+            raise ValueError(
+                f"corrupt or partial trace file: {entry.relpath} (trace_id {trace_id}): {exc}"
+            ) from exc
 
     def get_index(self, trace_id: str) -> TraceIndexEntry:
         row = self._index_row(trace_id)
@@ -160,13 +178,32 @@ class TraceStore:
     def _connect(self) -> Iterator[sqlite3.Connection]:
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA foreign_keys = ON")
-        conn.execute("PRAGMA journal_mode = WAL")
         try:
+            conn.execute("PRAGMA foreign_keys = ON")
+            conn.execute("PRAGMA journal_mode = WAL")
             yield conn
             conn.commit()
+        except sqlite3.IntegrityError:
+            raise
+        except sqlite3.Error as exc:
+            raise _index_error(exc) from exc
         finally:
             conn.close()
+
+
+_CORRUPT_INDEX_MARKERS = (
+    "not a database",
+    "malformed",
+    "disk image",
+    "file is encrypted",
+)
+
+
+def _index_error(exc: sqlite3.Error) -> ValueError:
+    text = str(exc).lower()
+    if any(marker in text for marker in _CORRUPT_INDEX_MARKERS):
+        return ValueError(f"corrupt trace store index: {exc}")
+    return ValueError(f"trace store index error: {exc}")
 
 
 def _preview(text: str) -> str:

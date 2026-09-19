@@ -103,7 +103,7 @@ def test_resolved_hub_revision_requires_commit_sha(monkeypatch: pytest.MonkeyPat
     assert _as_commit_hash(pinned.upper()) == pinned
 
 
-def test_top_k_candidates_respects_schema_cap() -> None:
+def test_top_k_candidates_rejects_oversized_k() -> None:
     logits = tuple(float(i) for i in range(MAX_TOP_K + 5))
     step = StepLogits(
         token_ids=(1,),
@@ -111,6 +111,29 @@ def test_top_k_candidates_respects_schema_cap() -> None:
         logits=logits,
         truncated=False,
     )
-    top = step.top_k_candidates(MAX_TOP_K + 5, decode=str)
+    with pytest.raises(ValueError, match="oversized logit payload"):
+        step.top_k_candidates(MAX_TOP_K + 5, decode=str)
+
+
+def test_top_k_candidates_stores_at_most_max_top_k() -> None:
+    logits = tuple(float(i) for i in range(MAX_TOP_K + 5))
+    step = StepLogits(
+        token_ids=(1,),
+        requested_token_ids=(1,),
+        logits=logits,
+        truncated=False,
+    )
+    top = step.top_k_candidates(MAX_TOP_K, decode=str)
     assert len(top) == MAX_TOP_K
     assert top[0].token_id == MAX_TOP_K + 4
+
+
+def test_top_k_candidates_rejects_empty_logits() -> None:
+    step = StepLogits(
+        token_ids=(1,),
+        requested_token_ids=(1,),
+        logits=(),
+        truncated=False,
+    )
+    with pytest.raises(ValueError, match="no logits"):
+        step.top_k_candidates(5, decode=str)

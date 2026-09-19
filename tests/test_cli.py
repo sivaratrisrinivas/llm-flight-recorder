@@ -269,6 +269,9 @@ def test_cli_record_replay_compare_help(capsys: CaptureFixture[str]) -> None:
     assert "--json" in compare_help
     assert "Exit 0" in compare_help
 
+    assert "--no-persist" in record_help
+    assert "--redact" in record_help
+
 
 def test_cli_record_twice_then_compare_identical(
     tmp_path: Path, capsys: CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
@@ -292,3 +295,44 @@ def test_cli_record_twice_then_compare_identical(
     compare_out = capsys.readouterr().out
     assert "identical" in compare_out
     assert "FIRST BEHAVIORAL DIVERGENCE" in compare_out
+
+
+def test_cli_missing_store_is_exit_1(tmp_path: Path, capsys: CaptureFixture[str]) -> None:
+    missing = tmp_path / "no-store"
+    code = run(["replay", "11111111-1111-4111-8111-111111111111", "--store", str(missing)])
+    assert code == 1
+    err = capsys.readouterr().err
+    assert "error:" in err
+    assert "trace store not found" in err
+    assert "Traceback" not in err
+
+
+def test_cli_inspect_missing_store_is_exit_1(tmp_path: Path, capsys: CaptureFixture[str]) -> None:
+    code = run(
+        ["inspect", "11111111-1111-4111-8111-111111111111", "--store", str(tmp_path / "missing")]
+    )
+    assert code == 1
+    err = capsys.readouterr().err
+    assert "error:" in err
+    assert "trace store not found" in err
+    assert "unknown trace_id" not in err
+
+
+def test_cli_validate_empty_file(tmp_path: Path, capsys: CaptureFixture[str]) -> None:
+    path = tmp_path / "empty.json"
+    path.write_text(" \n", encoding="utf-8")
+    assert run(["validate", str(path)]) == 1
+    err = capsys.readouterr().err
+    assert "error:" in err
+    assert "empty or truncated" in err
+    assert "Traceback" not in err
+
+
+def test_cli_validate_partial_jsonl(tmp_path: Path, capsys: CaptureFixture[str]) -> None:
+    path = tmp_path / "partial.jsonl"
+    path.write_text('{"record":"header", "schema_version":"1.0.0"\n', encoding="utf-8")
+    assert run(["validate", str(path)]) == 1
+    err = capsys.readouterr().err
+    assert "error:" in err
+    assert "corrupt or partial" in err
+    assert "Traceback" not in err

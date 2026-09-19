@@ -297,6 +297,10 @@ def test_length_mismatch_uses_decoding_config() -> None:
     assert first.step == 1
     assert first.classification == "decoding config"
     assert first.differences == ("length",)
+    fields = {diff.field for diff in result.config_diffs}
+    assert "generation_config.max_new_tokens" in fields
+    assert "event.top_k.length" not in fields
+    assert not any("event top-k depths differ" in note for note in result.notes)
 
 
 def test_prompt_metadata_without_history_split_is_not_prompt_history() -> None:
@@ -339,6 +343,95 @@ def test_unequal_capture_k_token_split_is_not_raw_logit() -> None:
     assert first is not None
     assert first.classification != "raw-logit"
     assert first.classification == "unknown/runtime"
+
+
+def test_case_a_identical_greedy_recordings_match() -> None:
+    generation = GenerationConfig(max_new_tokens=2, do_sample=False, seed=3)
+    trace_a = record_generation(
+        FakeCausalLMAdapter(prompt_ids=[1, 2]),
+        "hello",
+        generation=generation,
+    )
+    trace_b = record_generation(
+        FakeCausalLMAdapter(prompt_ids=[1, 2]),
+        "hello",
+        generation=generation,
+    )
+    result = compare_traces(trace_a, trace_b)
+    assert result.identical is True
+    assert result.first_divergence is None
+    assert result.config_diffs == ()
+    assert [event.sampled_token_id for event in trace_a.events] == [
+        event.sampled_token_id for event in trace_b.events
+    ]
+
+
+def test_case_c_seed_diff_without_token_split_is_config_only() -> None:
+    trace_a = make_trace()
+    trace_b = make_trace(
+        trace_id=TRACE_ID_B,
+        generation=trace_a.generation_config.model_copy(update={"seed": 99}),
+    )
+    result = compare_traces(trace_a, trace_b)
+    assert result.first_divergence is None
+    assert result.identical is False
+    assert {diff.field for diff in result.config_diffs} == {"generation_config.seed"}
+    report = format_compare_result(result)
+    assert "generation_config.seed" in report
+    assert "class:" not in report
+    assert report.strip().endswith("diverged")
+
+
+def test_case_d_recorded_window_split_is_model_visible_context() -> None:
+    prompt_ids = [0, 1, 2, 3, 4]
+    generation = GenerationConfig(max_new_tokens=2, do_sample=False)
+    wide = record_generation(
+        FakeCausalLMAdapter(prompt_ids=prompt_ids, max_visible_tokens=16),
+        "long",
+        generation=generation,
+    )
+    narrow = record_generation(
+        FakeCausalLMAdapter(prompt_ids=prompt_ids, max_visible_tokens=2),
+        "long",
+        generation=generation,
+    )
+    result = compare_traces(wide, narrow)
+    first = result.first_divergence
+    assert first is not None
+    assert first.classification == "model-visible context"
+    assert "model_visible_context" in first.differences
+    assert first.classification != "raw-logit"
+
+
+def _with_topk_depth(trace: Trace, depth: int) -> Trace:
+    events = []
+    for event in trace.events:
+        events.append(event.model_copy(update={"top_k": event.top_k[:depth]}))
+    return trace.model_copy(update={"events": events})
+
+
+def test_case_g_event_topk_depth_mismatch_same_k_is_not_raw_logit() -> None:
+    trace_a = make_trace(k=5)
+    trace_b = _with_topk_depth(make_trace(k=5, trace_id=TRACE_ID_B), 3)
+    result = compare_traces(trace_a, trace_b)
+    assert result.first_divergence is None
+    assert result.identical is False
+    assert "event.top_k.length" in {diff.field for diff in result.config_diffs}
+    assert "run_metadata.logits.k" not in {diff.field for diff in result.config_diffs}
+    assert any("event top-k depths differ" in note for note in result.notes)
+
+
+def test_empty_topk_vs_captured_is_not_raw_logit() -> None:
+    trace_a = make_trace(k=5)
+    trace_b = _with_topk_depth(make_trace(k=5, trace_id=TRACE_ID_B), 0)
+    result = compare_traces(trace_a, trace_b)
+    first = result.first_divergence
+    assert result.identical is False
+    assert "event.top_k.length" in {diff.field for diff in result.config_diffs}
+    if first is not None:
+        assert first.classification != "raw-logit"
+        assert first.classification == "unknown/runtime"
+    assert any("empty top-k" in note for note in result.notes)
 
 
 def test_compare_cli_files_does_not_create_store(

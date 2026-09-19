@@ -32,6 +32,7 @@ from llmfr.core.format import (
 from llmfr.core.migrate import UnsupportedSchemaVersionError
 from llmfr.core.schema import GenerationConfig, Trace, load_path
 from llmfr.core.version import DEFAULT_TOP_K, SCHEMA_VERSION, __version__
+from llmfr.privacy import redact_trace
 from llmfr.record import record_generation
 from llmfr.replay import BIT_IDENTICAL_CAVEAT, ReplayResult, replay_trace
 from llmfr.storage import TraceStore
@@ -210,6 +211,23 @@ def record(
         Literal["json", "jsonl"],
         typer.Option("--format", help="On-disk trace format under traces/."),
     ] = "jsonl",
+    no_persist: Annotated[
+        bool,
+        typer.Option(
+            "--no-persist",
+            help="Skip writing the trace to disk. Default is local persist.",
+        ),
+    ] = False,
+    redact: Annotated[
+        bool,
+        typer.Option(
+            "--redact",
+            help=(
+                "Redact prompt, output, sampled-token strings, top-k token strings, "
+                "and context text before any store write."
+            ),
+        ),
+    ] = False,
 ) -> None:
     """Record a short generation into TraceStore and print trace_id.
 
@@ -228,6 +246,8 @@ def record(
             capture_k=capture_k,
             max_visible_tokens=max_visible_tokens,
             fmt=fmt,
+            persist=not no_persist,
+            redact=redact,
         )
     )
 
@@ -325,6 +345,8 @@ def _cmd_record(
     capture_k: int,
     max_visible_tokens: int | None,
     fmt: Literal["json", "jsonl"],
+    persist: bool,
+    redact: bool,
 ) -> int:
     try:
         adapter = _build_hf_adapter(
@@ -341,10 +363,12 @@ def _cmd_record(
             adapter,
             prompt,
             generation=generation,
-            store=TraceStore(Path(store)),
+            store=None if not persist else TraceStore(Path(store), create=True),
             capture_k=capture_k,
             fmt=fmt,
             source="cli",
+            persist=persist,
+            redact=redact_trace if redact else None,
         )
     except _RECORD_ERRORS as exc:
         return _fail(exc)
@@ -354,7 +378,7 @@ def _cmd_record(
 
 def _cmd_replay(*, trace_id: str, store: str) -> int:
     try:
-        loaded = TraceStore(Path(store)).get(trace_id)
+        loaded = TraceStore(Path(store), create=False).get(trace_id)
     except KeyError as exc:
         return _fail(exc)
     except _RECORD_ERRORS as exc:
@@ -440,7 +464,7 @@ def _load_trace_ref(ref: str, store_root: Path) -> Trace:
         return load_path(path)
     if _looks_like_trace_path(ref):
         raise FileNotFoundError(f"trace file not found: {ref}")
-    return TraceStore(store_root).get(ref)
+    return TraceStore(store_root, create=False).get(ref)
 
 
 def _replay(trace: Trace) -> ReplayResult:

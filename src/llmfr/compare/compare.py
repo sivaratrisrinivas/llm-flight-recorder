@@ -316,8 +316,11 @@ def _logits_uncomparable(
         return True
     if trace_a.run_metadata.logits.k != trace_b.run_metadata.logits.k:
         return True
-    if event_a is not None and event_b is not None and len(event_a.top_k) != len(event_b.top_k):
-        return True
+    if event_a is not None and event_b is not None:
+        if len(event_a.top_k) != len(event_b.top_k):
+            return True
+        if not event_a.top_k or not event_b.top_k:
+            return True
     return False
 
 
@@ -328,12 +331,39 @@ def _capture_notes(trace_a: Trace, trace_b: Trace, notes: list[str]) -> None:
         notes.append("one or both traces stored logits.mode=none; compare will not invent logits")
     if trace_a.run_metadata.logits.k != trace_b.run_metadata.logits.k:
         notes.append("captured top-k depths differ; unequal capture k is not a raw-logit split")
+    if _event_topk_depths_differ(trace_a, trace_b):
+        notes.append("event top-k depths differ; unequal capture is not a raw-logit split")
+    if _empty_topk_present(trace_a, trace_b):
+        notes.append("one or both events have empty top-k; empty capture is not a raw-logit split")
     env_a = trace_a.environment
     env_b = trace_b.environment
     if env_a.device and env_b.device and env_a.device != env_b.device:
         notes.append(f"environment.device differs: {env_a.device} vs {env_b.device}")
     if env_a.accelerator and env_b.accelerator and env_a.accelerator != env_b.accelerator:
         notes.append(f"environment.accelerator differs: {env_a.accelerator} vs {env_b.accelerator}")
+
+
+def _event_topk_length_diff(trace_a: Trace, trace_b: Trace) -> ConfigDiff | None:
+    shared = min(len(trace_a.events), len(trace_b.events))
+    depths_a = [len(event.top_k) for event in trace_a.events[:shared]]
+    depths_b = [len(event.top_k) for event in trace_b.events[:shared]]
+    if depths_a == depths_b:
+        return None
+    return ConfigDiff(
+        field="event.top_k.length",
+        a=_fmt_value(depths_a),
+        b=_fmt_value(depths_b),
+    )
+
+
+def _event_topk_depths_differ(trace_a: Trace, trace_b: Trace) -> bool:
+    return _event_topk_length_diff(trace_a, trace_b) is not None
+
+
+def _empty_topk_present(trace_a: Trace, trace_b: Trace) -> bool:
+    if trace_a.run_metadata.logits.mode != "topk" and trace_b.run_metadata.logits.mode != "topk":
+        return False
+    return any(not event.top_k for event in (*trace_a.events, *trace_b.events))
 
 
 def _config_diffs(trace_a: Trace, trace_b: Trace) -> list[ConfigDiff]:
@@ -420,6 +450,9 @@ def _config_diffs(trace_a: Trace, trace_b: Trace) -> list[ConfigDiff]:
         if value_a != value_b:
             rows.append(ConfigDiff(field=field, a=_fmt_value(value_a), b=_fmt_value(value_b)))
     rows.extend(_library_version_diffs(trace_a, trace_b))
+    length_diff = _event_topk_length_diff(trace_a, trace_b)
+    if length_diff is not None:
+        rows.append(length_diff)
     return rows
 
 
@@ -488,6 +521,7 @@ _ENABLING_FIELD_SELECTORS: dict[DivergenceClass, tuple[str, ...]] = {
         "run_metadata.logits.mode",
         "run_metadata.logits.k",
         "run_metadata.logits.unavailable_reason",
+        "event.top_k.length",
         "environment.device",
         "environment.accelerator",
     ),

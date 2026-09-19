@@ -63,3 +63,12 @@ def test_inspect_step_unavailable_logits_does_not_invent() -> None:
     text = format_inspect_step(make_trace(logits_mode="none"), 0)
     assert "logits unavailable" in text
     assert "no invented logits" in text
+
+
+def test_inspect_step_empty_topk_is_honest() -> None:
+    trace = make_trace(k=3)
+    events = [event.model_copy(update={"top_k": []}) for event in trace.events]
+    stripped = trace.model_copy(update={"events": events})
+    text = format_inspect_step(stripped, 0)
+    assert "(no top-k logits)" in text
+    assert "invent" not in text

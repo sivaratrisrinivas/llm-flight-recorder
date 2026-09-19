@@ -345,6 +345,35 @@ def test_replay_forward_failure_is_not_replayable() -> None:
     assert any("replay stopped" in note for note in result.notes)
 
 
+def test_replay_mid_step_failure_keeps_matched_prefix() -> None:
+    recorded = record_generation(
+        _peaked_adapter(),
+        "x",
+        generation=GenerationConfig(max_new_tokens=2, do_sample=False),
+    )
+    boom = _peaked_adapter()
+    original = boom.next_token_logits
+    calls = {"n": 0}
+
+    def _fail_later(context: object) -> object:
+        calls["n"] += 1
+        if calls["n"] > 1:
+            raise RuntimeError("forward failed at step 1")
+        return original(context)  # type: ignore[misc]
+
+    boom.next_token_logits = _fail_later  # type: ignore[method-assign]
+    result = replay_trace(recorded, adapter=boom)
+    assert result.status == "not_replayable"
+    assert result.matched_steps == 1
+    assert result.total_steps == 2
+    assert result.token_ids_matched is False
+    assert result.bit_identical is False
+    assert result.steps[0].token_matched is True
+    assert result.reason is not None
+    assert "forward failed at step 1" in result.reason
+    assert any("replay stopped after 1 step" in note for note in result.notes)
+
+
 def test_cli_replay_runtime_failure_prints_json(
     tmp_path: Path, capsys: CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
