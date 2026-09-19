@@ -1,0 +1,9 @@
+backend=hf
+model=Qwen/Qwen2.5-0.5B-Instruct
+revision=7ae557604adf67be50417f59c2c2f167def9a775
+n_items=8
+max_new_tokens=64
+sampling_seeds=1 2
+sampling_temperature=1.0
+decoding_seed=1 temperatures=0.7 1.2
+grading_rule=Extract the last whole number in output_text. A token matching -?\d+(?:\.\d+)? is a whole number iff float(token).is_integer(). Grade correct if that integer equals gold, wrong if it differs, no_answer if none is found. No LLM judge.
