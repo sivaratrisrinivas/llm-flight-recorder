@@ -46,6 +46,6 @@ llmfr inspect path/a.jsonl --step 0
 
 - Token replay on a pinned CPU checkpoint is not a promise of bit-identical logits across GPU, dtype, or PyTorch builds. See `docs/adr/0005-deterministic-replay.md`.
 - v1 is local-only: SQLite index plus JSON/JSONL files keyed by `trace_id`. Nothing is sent to a hosted store.
-- Callers can redact prompt/output/context text before write (`redact_trace`, `llmfr record --redact`) or skip the store (`persist=False`, `--no-persist`). Local persist stays the default.
+- Callers can redact prompt, output, sampled-token strings, top-k token strings, and context text before write (`redact_trace`, `llmfr record --redact`) or skip the store (`persist=False`, `--no-persist`). Local persist stays the default.
 - If a backend does not expose real logits or logprobs, the trace records that. llmfr does not invent scores.
 - Design notes: `docs/adr/`.

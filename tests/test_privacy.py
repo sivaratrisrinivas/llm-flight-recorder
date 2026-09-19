@@ -16,6 +16,32 @@ from tests.factories import make_trace
 from tests.fakes import FakeCausalLMAdapter
 
 
+def _generation_token_strings(trace: Trace) -> list[str]:
+    values: list[str] = []
+    if trace.run_metadata.output_text:
+        values.append(trace.run_metadata.output_text)
+    for event in trace.events:
+        if event.sampled_token:
+            values.append(event.sampled_token)
+        values.extend(candidate.token for candidate in event.top_k if candidate.token)
+    return values
+
+
+def _assert_generation_text_redacted(trace: Trace) -> None:
+    leaked = [value for value in _generation_token_strings(trace) if value != REDACTED]
+    assert leaked == []
+    for event in trace.events:
+        assert event.sampled_token in {"", REDACTED}
+        for candidate in event.top_k:
+            assert candidate.token in {"", REDACTED}
+
+
+def test_default_redact_fields_include_generation_token_strings() -> None:
+    assert "output_text" in DEFAULT_REDACT_FIELDS
+    assert "sampled_token" in DEFAULT_REDACT_FIELDS
+    assert "top_k.token" in DEFAULT_REDACT_FIELDS
+
+
 def test_redact_trace_replaces_default_text_fields() -> None:
     original = make_trace()
     redacted = redact_trace(original)
@@ -24,8 +50,17 @@ def test_redact_trace_replaces_default_text_fields() -> None:
     assert redacted.events[0].full_history.text == REDACTED
     assert redacted.events[0].full_history.token_ids == original.events[0].full_history.token_ids
     assert redacted.events[0].sampled_token_id == original.events[0].sampled_token_id
-    assert redacted.events[0].top_k == original.events[0].top_k
+    assert redacted.events[0].sampled_token == REDACTED
+    assert [candidate.token_id for candidate in redacted.events[0].top_k] == [
+        candidate.token_id for candidate in original.events[0].top_k
+    ]
+    assert [candidate.logit for candidate in redacted.events[0].top_k] == [
+        candidate.logit for candidate in original.events[0].top_k
+    ]
+    _assert_generation_text_redacted(redacted)
     assert original.run_metadata.prompt == "Say hello"
+    assert original.events[0].sampled_token == "Hello"
+    assert original.events[0].top_k[0].token == "Hello"
 
 
 def test_redact_trace_rejects_unknown_fields() -> None:
@@ -33,11 +68,13 @@ def test_redact_trace_rejects_unknown_fields() -> None:
         redact_trace(make_trace(), fields=("prompt", "secret_blob"))
 
 
-def test_redact_trace_can_target_sampled_token_and_tags() -> None:
+def test_redact_trace_subset_leaves_other_fields() -> None:
     redacted = redact_trace(make_trace(), fields=("sampled_token", "tags"))
     assert redacted.run_metadata.prompt == "Say hello"
+    assert redacted.run_metadata.output_text == "Hello world"
     assert redacted.events[0].sampled_token == REDACTED
     assert redacted.events[0].sampled_token_id == 101
+    assert redacted.events[0].top_k[0].token == "Hello"
     assert redacted.run_metadata.tags == {"case": REDACTED}
 
 
@@ -59,6 +96,11 @@ def test_record_persist_false_skips_store(tmp_path: Path) -> None:
 
 def test_record_redacts_before_persist(tmp_path: Path) -> None:
     store = TraceStore(tmp_path)
+    unredacted = record_generation(
+        FakeCausalLMAdapter(prompt_ids=[1, 2]),
+        "secret prompt",
+        generation=GenerationConfig(max_new_tokens=1, do_sample=False),
+    )
     trace = record_generation(
         FakeCausalLMAdapter(prompt_ids=[1, 2]),
         "secret prompt",
@@ -68,10 +110,13 @@ def test_record_redacts_before_persist(tmp_path: Path) -> None:
     )
     loaded = store.get(str(trace.run_metadata.trace_id))
     assert loaded.run_metadata.prompt == REDACTED
-    assert loaded.run_metadata.output_text == REDACTED
-    assert loaded.events[0].full_history.text == REDACTED
     assert loaded.events[0].full_history.token_ids == [1, 2]
     assert loaded.run_metadata.prompt_token_ids == [1, 2]
+    _assert_generation_text_redacted(loaded)
+    assert unredacted.events[0].sampled_token not in {REDACTED, ""}
+    assert unredacted.events[0].sampled_token not in _generation_token_strings(loaded)
+    assert unredacted.events[0].top_k[0].token not in _generation_token_strings(loaded)
+    assert unredacted.run_metadata.output_text not in _generation_token_strings(loaded)
 
 
 def test_record_custom_redactor_hook(tmp_path: Path) -> None:
@@ -93,6 +138,8 @@ def test_record_custom_redactor_hook(tmp_path: Path) -> None:
     )
     loaded = store.get(str(trace.run_metadata.trace_id))
     assert loaded.run_metadata.prompt == "cleared"
+    assert loaded.events[0].sampled_token != REDACTED
+    assert loaded.events[0].top_k[0].token != REDACTED
     assert "prompt" in DEFAULT_REDACT_FIELDS
 
 
@@ -144,5 +191,8 @@ def test_cli_record_redact_before_write(
     trace_id = capsys.readouterr().out.strip()
     loaded = TraceStore(tmp_path).get(trace_id)
     assert loaded.run_metadata.prompt == REDACTED
-    assert loaded.run_metadata.output_text == REDACTED
     assert "secret prompt" not in loaded.run_metadata.prompt
+    _assert_generation_text_redacted(loaded)
+    joined = "".join(event.sampled_token for event in loaded.events)
+    assert joined == REDACTED
+    assert all(candidate.token == REDACTED for event in loaded.events for candidate in event.top_k)

@@ -20,12 +20,13 @@ DEFAULT_REDACT_FIELDS: tuple[str, ...] = (
     "output_text",
     "full_history.text",
     "model_visible_context.text",
+    "sampled_token",
+    "top_k.token",
 )
 
 _ALLOWED_REDACT_FIELDS = frozenset(
     {
         *DEFAULT_REDACT_FIELDS,
-        "sampled_token",
         "tags",
     }
 )
@@ -42,6 +43,7 @@ def redact_trace(
     Token ids, logits, and scores are left intact so replay and compare can
     still run on the redacted file. Unknown field names are a usage error.
     Empty strings and ``None`` text stay as recorded (nothing to hide).
+    Pass ``fields`` to redact a subset; pass a custom ``Redactor`` for more.
     """
     selected = tuple(DEFAULT_REDACT_FIELDS if fields is None else fields)
     unknown = [name for name in selected if name not in _ALLOWED_REDACT_FIELDS]
@@ -70,6 +72,11 @@ def _redact_event(event: Event, chosen: set[str], replacement: str) -> Event:
     updates: dict[str, object] = {}
     if "sampled_token" in chosen:
         updates["sampled_token"] = _replace_text(event.sampled_token, replacement)
+    if "top_k.token" in chosen and event.top_k:
+        updates["top_k"] = [
+            candidate.model_copy(update={"token": _replace_text(candidate.token, replacement)})
+            for candidate in event.top_k
+        ]
     history = event.full_history
     if "full_history.text" in chosen and history.text is not None:
         updates["full_history"] = history.model_copy(

@@ -222,7 +222,10 @@ def record(
         bool,
         typer.Option(
             "--redact",
-            help="Redact prompt, output, and context text before any store write.",
+            help=(
+                "Redact prompt, output, sampled-token strings, top-k token strings, "
+                "and context text before any store write."
+            ),
         ),
     ] = False,
 ) -> None:
