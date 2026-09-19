@@ -535,9 +535,7 @@ def _build_record_adapter(
     backend = resolve_record_provider(provider, model_id)
     if backend == "openai":
         if revision is not None:
-            raise ValueError(
-                "--revision pins a Hugging Face Hub commit; omit it for OpenAI"
-            )
+            raise ValueError("--revision pins a Hugging Face Hub commit; omit it for OpenAI")
         return _build_openai_adapter(
             model_id=model_id,
             max_visible_tokens=max_visible_tokens,

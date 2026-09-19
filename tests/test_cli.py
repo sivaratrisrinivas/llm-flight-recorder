@@ -455,6 +455,35 @@ def test_cli_record_openai_mocked(
     assert "top-k" in inspect_out
 
 
+def test_cli_record_openai_rejects_hub_revision(
+    tmp_path: Path, capsys: CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def _boom(**_kwargs: object) -> None:
+        raise AssertionError("OpenAI adapter must not be built when --revision is set")
+
+    monkeypatch.setattr("llmfr.cli._build_openai_adapter", _boom)
+    code = run(
+        [
+            "record",
+            "Hi",
+            "--provider",
+            "openai",
+            "--revision",
+            "7ae557604adf67be50417f59c2c2f167def9a775",
+            "--store",
+            str(tmp_path),
+            "--max-new-tokens",
+            "1",
+        ]
+    )
+    assert code == 1
+    err = capsys.readouterr().err
+    assert "error:" in err
+    assert "--revision" in err
+    assert "OpenAI" in err
+    assert "Traceback" not in err
+
+
 def test_cli_record_openai_prefix_selects_backend(
     tmp_path: Path, capsys: CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -507,7 +536,12 @@ def test_cli_record_bare_gpt_name_stays_huggingface(
         openai_built.append(str(_kwargs.get("model_id")))
         raise AssertionError("bare gpt-* must not auto-select OpenAI")
 
-    def _hf(*, model_id: str | None, max_visible_tokens: int | None) -> FakeCausalLMAdapter:
+    def _hf(
+        *,
+        model_id: str | None,
+        max_visible_tokens: int | None,
+        revision: str | None = None,
+    ) -> FakeCausalLMAdapter:
         hf_built.append(str(model_id))
         return FakeCausalLMAdapter(prompt_ids=[1, 2])
 
