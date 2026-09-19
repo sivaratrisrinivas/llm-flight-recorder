@@ -1,9 +1,10 @@
-"""Minimal inspect, record, and replay CLI. Compare is a later milestone."""
+"""Minimal inspect, record, replay, and compare CLI."""
 
 from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from collections.abc import Sequence
 from pathlib import Path
@@ -16,6 +17,7 @@ from llmfr.adapters.huggingface import (
     HuggingFaceCausalLMAdapter,
     HuggingFaceExtraMissingError,
 )
+from llmfr.compare import CompareResult, compare_traces, format_compare_result
 from llmfr.core.format import format_trace_topk
 from llmfr.core.migrate import UnsupportedSchemaVersionError
 from llmfr.core.schema import GenerationConfig, Trace, load_path
@@ -49,7 +51,7 @@ def build_parser() -> argparse.ArgumentParser:
         prog="llmfr",
         description=(
             "LLM Flight Recorder. Record a short generation, replay a stored trace, "
-            "or inspect stored traces. Compare commands are not available yet."
+            "compare two traces, or inspect stored traces."
         ),
     )
     sub = parser.add_subparsers(dest="command", required=True)
@@ -100,6 +102,24 @@ def build_parser() -> argparse.ArgumentParser:
         default=".llmfr",
         help="TraceStore directory (SQLite index plus traces/)",
     )
+
+    compare = sub.add_parser(
+        "compare",
+        help="Compare two traces and report first divergence (Milestone 5, minimal)",
+    )
+    compare.add_argument("trace_a", help="Trace file path or TraceStore trace_id")
+    compare.add_argument("trace_b", help="Trace file path or TraceStore trace_id")
+    compare.add_argument(
+        "--store",
+        default=".llmfr",
+        help="TraceStore directory when arguments are trace_ids",
+    )
+    compare.add_argument(
+        "--json",
+        action="store_true",
+        dest="as_json",
+        help="Print structured CompareResult JSON instead of the text report",
+    )
     return parser
 
 
@@ -128,6 +148,8 @@ def run(argv: Sequence[str] | None = None) -> int:
         return _cmd_record(args)
     if args.command == "replay":
         return _cmd_replay(args)
+    if args.command == "compare":
+        return _cmd_compare(args)
     raise AssertionError(f"unknown command {args.command}")
 
 
@@ -186,8 +208,51 @@ def _cmd_replay(args: argparse.Namespace) -> int:
     return 1
 
 
+def _cmd_compare(args: argparse.Namespace) -> int:
+    store_root = Path(args.store)
+    try:
+        trace_a = _load_trace_ref(args.trace_a, store_root)
+        trace_b = _load_trace_ref(args.trace_b, store_root)
+    except KeyError as exc:
+        sys.stderr.write(f"error: {exc}\n")
+        return 1
+    except _LOAD_ERRORS as exc:
+        sys.stderr.write(f"error: {exc}\n")
+        return 1
+    result = _compare(trace_a, trace_b)
+    if args.as_json:
+        sys.stdout.write(result.model_dump_json(indent=2) + "\n")
+    else:
+        sys.stdout.write(format_compare_result(result))
+    if result.identical:
+        return 0
+    return 1
+
+
+def _looks_like_trace_path(ref: str) -> bool:
+    path = Path(ref)
+    if path.suffix.lower() in {".json", ".jsonl"}:
+        return True
+    if os.sep in ref:
+        return True
+    return os.altsep is not None and os.altsep in ref
+
+
+def _load_trace_ref(ref: str, store_root: Path) -> Trace:
+    path = Path(ref)
+    if path.is_file():
+        return load_path(path)
+    if _looks_like_trace_path(ref):
+        raise FileNotFoundError(f"trace file not found: {ref}")
+    return TraceStore(store_root).get(ref)
+
+
 def _replay(trace: Trace) -> ReplayResult:
     return replay_trace(trace)
+
+
+def _compare(trace_a: Trace, trace_b: Trace) -> CompareResult:
+    return compare_traces(trace_a, trace_b)
 
 
 def _build_hf_adapter(

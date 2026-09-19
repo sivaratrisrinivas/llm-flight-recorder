@@ -67,7 +67,8 @@ def test_cli_validate_invalid_trace(tmp_path: Path, capsys: CaptureFixture[str])
 def test_cli_record_is_listed() -> None:
     help_text = build_parser().format_help()
     assert "record" in help_text
-    assert "Compare commands are not available yet." in help_text
+    assert "compare" in help_text
+    assert "Compare commands are not available yet." not in help_text
 
 
 def test_cli_record_prints_trace_id(

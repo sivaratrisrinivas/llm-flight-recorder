@@ -255,8 +255,8 @@ def test_infer_max_visible_tokens_from_truncated_events() -> None:
 def test_cli_replay_is_listed() -> None:
     help_text = build_parser().format_help()
     assert "replay" in help_text
-    assert "Compare commands are not available yet." in help_text
-    assert "Replay and compare commands are not available yet." not in help_text
+    assert "compare" in help_text
+    assert "Compare commands are not available yet." not in help_text
 
 
 def test_cli_replay_prints_structured_result(
