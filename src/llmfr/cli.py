@@ -11,6 +11,7 @@ from typing import Annotated, Literal
 
 import typer
 from pydantic import ValidationError
+from typer._click.exceptions import NoArgsIsHelpError
 from typer.exceptions import Abort, TyperException
 from typer.main import get_command
 from typer.models import Context
@@ -102,6 +103,12 @@ def run(argv: Sequence[str] | None = None) -> int:
     except Abort:
         sys.stderr.write("error: aborted\n")
         return EXIT_FAIL
+    except NoArgsIsHelpError as exc:
+        help_text = exc.format_message()
+        if not help_text.endswith("\n"):
+            help_text += "\n"
+        sys.stdout.write(help_text)
+        return EXIT_OK
     except TyperException as exc:
         sys.stderr.write(f"error: {exc.format_message()}\n")
         return int(exc.exit_code)

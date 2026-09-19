@@ -234,6 +234,17 @@ def test_cli_usage_error_is_exit_2(capsys: CaptureFixture[str]) -> None:
     assert "Traceback" not in err
 
 
+def test_cli_no_args_prints_help(capsys: CaptureFixture[str]) -> None:
+    assert run([]) == 0
+    captured = capsys.readouterr()
+    assert "record" in captured.out
+    assert "inspect" in captured.out
+    assert "Exit codes:" in captured.out
+    assert "error:" not in captured.err
+    assert "Traceback" not in captured.err
+    assert "Traceback" not in captured.out
+
+
 def test_cli_inspect_help_mentions_step(capsys: CaptureFixture[str]) -> None:
     assert run(["inspect", "--help"]) == 0
     out = capsys.readouterr().out
