@@ -34,7 +34,7 @@ def test_hf_adapter_satisfies_protocol(adapter: HuggingFaceCausalLMAdapter) -> N
     assert caps.supports_logprobs is True
     assert caps.supports_attention is False
     assert caps.supports_hidden_states is False
-    assert caps.supports_seed is False
+    assert caps.supports_seed is True
     assert caps.supports_replay is True
     assert adapter.model_id == DEFAULT_HF_MODEL_ID
     assert adapter.max_visible_tokens == 8

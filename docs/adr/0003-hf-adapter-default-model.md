@@ -51,8 +51,11 @@ because tiny-gpt2 (2 layers, 2 heads, embedding size 2) is only a smoke test.
    - `supports_attention=False` and `supports_hidden_states=False` because
      this adapter does not return those tensors, even if a given HF model
      could compute them.
-   - `supports_seed=False` until Milestone 3 sampling. Eval logits do not
-     depend on a seed; the adapter does not call `torch.manual_seed`.
+   - `supports_seed` was False in M2 because eval logits do not depend on a
+     seed and the adapter did not sample. Milestone 3 sets this True; the
+     recorder consumes `GenerationConfig.seed` with an isolated
+     `random.Random`. The adapter still does not call `torch.manual_seed`.
+     See ADR 0004.
    - `supports_replay=True` because the same visible token ids and the
      pinned weights reproduce the same logits. The replay CLI is still M4.
 

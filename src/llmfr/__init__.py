@@ -32,6 +32,18 @@ from llmfr.core import (
     loads_jsonl,
     migrate_payload,
 )
+from llmfr.record import (
+    RECORDER_PIPELINE,
+    SAMPLING_STAGES,
+    LocalRNG,
+    RecordableAdapter,
+    SampleDecision,
+    choose_token,
+    effective_generation_config,
+    is_greedy,
+    record_generation,
+    softmax,
+)
 from llmfr.storage import DuplicateTraceIdError, TraceIndexEntry, TracePathError, TraceStore
 
 __all__ = [
@@ -45,6 +57,16 @@ __all__ = [
     "HuggingFaceExtraMissingError",
     "ModelAdapter",
     "StepLogits",
+    "RECORDER_PIPELINE",
+    "SAMPLING_STAGES",
+    "LocalRNG",
+    "RecordableAdapter",
+    "SampleDecision",
+    "choose_token",
+    "effective_generation_config",
+    "is_greedy",
+    "record_generation",
+    "softmax",
     "DuplicateTraceIdError",
     "TracePathError",
     "Environment",

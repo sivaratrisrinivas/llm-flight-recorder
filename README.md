@@ -26,10 +26,9 @@ a stable `trace_id`. No Kafka, Kubernetes, Redis, or Postgres. No LangChain.
 - Round-trip serialize/deserialize tests (Case G)
 - ADRs for the v1 schema and storage choices
 
-Not in M1: Hugging Face adapter, recorder loop, replay, compare, or a `record`
-CLI command. `llmfr version`, `validate`, and `topk` only inspect stored traces.
+Inspect CLI: `llmfr version`, `validate`, and `topk`.
 
-## Milestone 2 (done on this branch)
+## Milestone 2 (done)
 
 - `ModelAdapter` protocol with capability flags: `supports_logits`,
   `supports_logprobs`, `supports_attention`, `supports_hidden_states`,
@@ -40,40 +39,67 @@ CLI command. `llmfr version`, `validate`, and `topk` only inspect stored traces.
   `distilbert/distilgpt2` (see `docs/adr/0003-hf-adapter-default-model.md`)
 - Optional extra `hf` so a core M1 install does not pull torch
 
-Not in M2: recorder loop, replay, compare, or a polished `record` CLI.
+## Milestone 3 (done on this branch)
+
+- Token-by-token generation recorder. Each step, in order: full history,
+  model-visible context, raw logits, temperature-adjusted logits,
+  probabilities, sampling, chosen token, append
+- Distinguishes `full_history` vs `model_visible_context` at every step
+  (left-windowing matches the M1 suffix/truncation rules)
+- Persists via existing `TraceStore` (SQLite index plus JSON/JSONL, top-k)
+- `supports_seed=True` on the HF adapter. Seed drives an isolated
+  `random.Random` in the recorder, not `torch.manual_seed` (see
+  `docs/adr/0004-recorder-loop.md`)
+- Minimal `llmfr record` that writes a store and prints `trace_id`
+
+Not in M3: replay, compare, or a polished record CLI.
 
 ## Install and test
 
-Core (schema, storage, inspect CLI):
+Core (schema, storage, inspect CLI, recorder unit tests with a fake adapter):
 
 ```bash
 pip install -e ".[dev]"
-pytest
+pytest tests/test_schema.py tests/test_store.py tests/test_sample.py tests/test_recorder.py tests/test_cli.py
 ruff check src tests
 ruff format --check src tests
 mypy
 ```
 
-Hugging Face adapter (CPU, downloads `sshleifer/tiny-gpt2` on first run).
-Install the CPU torch wheel first, matching CI. A bare
+Hugging Face adapter and recorder (CPU, downloads `sshleifer/tiny-gpt2` on
+first run). Install the CPU torch wheel first, matching CI. A bare
 `pip install -e ".[dev,hf]"` can pull the CUDA-default PyPI torch build.
 
 ```bash
 pip install --index-url https://download.pytorch.org/whl/cpu torch
 pip install --upgrade-strategy only-if-needed -e ".[dev,hf]"
-pytest tests/test_huggingface_adapter.py tests/test_adapter_protocol.py
+pytest
 ```
 
-`tests/test_huggingface_adapter.py` is marked `slow` and is skipped unless
-`torch` and `transformers` are installed. It does not stub logits.
+Recorder-only with the live model:
+
+```bash
+pytest tests/test_recorder_hf.py tests/test_huggingface_adapter.py tests/test_adapter_protocol.py
+```
+
+`tests/test_huggingface_adapter.py` and `tests/test_recorder_hf.py` are marked
+`slow` and are skipped unless `torch` and `transformers` are installed. They
+do not stub logits.
+
+Minimal record CLI (prints `trace_id`):
+
+```bash
+llmfr record "Hello" --store .llmfr --max-new-tokens 8 --greedy
+```
 
 ## Roadmap
 
 - [x] **M1** Schema and storage
 - [x] **M2** Hugging Face adapter
-- [ ] **M3** Recorder loop
+- [x] **M3** Recorder loop
 - [ ] **M4** Replay
 - [ ] **M5** Compare / first-divergence UI
 
 Design notes: `docs/adr/0001-v1-trace-schema.md`, `docs/adr/0002-v1-storage.md`,
-and `docs/adr/0003-hf-adapter-default-model.md`.
+`docs/adr/0003-hf-adapter-default-model.md`, and
+`docs/adr/0004-recorder-loop.md`.
