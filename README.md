@@ -39,7 +39,7 @@ Inspect CLI: `llmfr version`, `validate`, and `topk`.
   `distilbert/distilgpt2` (see `docs/adr/0003-hf-adapter-default-model.md`)
 - Optional extra `hf` so a core M1 install does not pull torch
 
-## Milestone 3 (done on this branch)
+## Milestone 3 (done)
 
 - Token-by-token generation recorder. Each step, in order: full history,
   model-visible context, raw logits, temperature-adjusted logits,
@@ -54,20 +54,38 @@ Inspect CLI: `llmfr version`, `validate`, and `topk`.
 
 Not in M3: replay, compare, or a polished record CLI.
 
+## Milestone 4 (done on this branch)
+
+- Replay a stored Trace as far as the runtime permits, using the recorded
+  seed, effective `generation_config`, and Hub revision pin
+  (`ModelConfig.revision`)
+- Re-runs the M3 sampling path (`LocalRNG` + `choose_token`) against the
+  same adapter weights. Does not invent logits to force a match
+- Structured `ReplayResult` for CLI and tests: `reproduced`,
+  `partially_reproduced`, `not_reproduced`, `not_replayable`, plus separate
+  flags for token match vs bit-identical logits
+- ADR for what cannot be bit-identical across GPU/CPU/PyTorch/kernels
+  (`docs/adr/0005-deterministic-replay.md`)
+- Minimal `llmfr replay TRACE_ID` against the existing TraceStore layout
+
+Not in M4: compare / first-divergence (M5), downstream-effects (M6), or a
+polished CLI (M7). A token match is not reported as a full numeric match
+when logits differ.
+
 ## Install and test
 
 Core (schema, storage, inspect CLI, recorder unit tests with a fake adapter):
 
 ```bash
 pip install -e ".[dev]"
-pytest tests/test_schema.py tests/test_store.py tests/test_sample.py tests/test_recorder.py tests/test_cli.py
+pytest tests/test_schema.py tests/test_store.py tests/test_sample.py tests/test_recorder.py tests/test_replay.py tests/test_cli.py
 ruff check src tests
 ruff format --check src tests
 mypy
 ```
 
-Hugging Face adapter and recorder (CPU, downloads `sshleifer/tiny-gpt2` on
-first run). Install the CPU torch wheel first, matching CI. A bare
+Hugging Face adapter, recorder, and replay (CPU, downloads `sshleifer/tiny-gpt2`
+on first run). Install the CPU torch wheel first, matching CI. A bare
 `pip install -e ".[dev,hf]"` can pull the CUDA-default PyPI torch build.
 
 ```bash
@@ -76,20 +94,21 @@ pip install --upgrade-strategy only-if-needed -e ".[dev,hf]"
 pytest
 ```
 
-Recorder-only with the live model:
+Recorder and replay with the live model:
 
 ```bash
-pytest tests/test_recorder_hf.py tests/test_huggingface_adapter.py tests/test_adapter_protocol.py
+pytest tests/test_recorder_hf.py tests/test_replay_hf.py tests/test_huggingface_adapter.py tests/test_adapter_protocol.py
 ```
 
-`tests/test_huggingface_adapter.py` and `tests/test_recorder_hf.py` are marked
-`slow` and are skipped unless `torch` and `transformers` are installed. They
-do not stub logits.
+`tests/test_huggingface_adapter.py`, `tests/test_recorder_hf.py`, and
+`tests/test_replay_hf.py` are marked `slow` and are skipped unless `torch`
+and `transformers` are installed. They do not stub logits.
 
-Minimal record CLI (prints `trace_id`):
+Minimal record then replay (prints `trace_id`, then a JSON `ReplayResult`):
 
 ```bash
 llmfr record "Hello" --store .llmfr --max-new-tokens 8 --greedy
+llmfr replay TRACE_ID --store .llmfr
 ```
 
 ## Roadmap
@@ -97,9 +116,9 @@ llmfr record "Hello" --store .llmfr --max-new-tokens 8 --greedy
 - [x] **M1** Schema and storage
 - [x] **M2** Hugging Face adapter
 - [x] **M3** Recorder loop
-- [ ] **M4** Replay
+- [x] **M4** Replay (this branch)
 - [ ] **M5** Compare / first-divergence UI
 
 Design notes: `docs/adr/0001-v1-trace-schema.md`, `docs/adr/0002-v1-storage.md`,
-`docs/adr/0003-hf-adapter-default-model.md`, and
-`docs/adr/0004-recorder-loop.md`.
+`docs/adr/0003-hf-adapter-default-model.md`, `docs/adr/0004-recorder-loop.md`,
+and `docs/adr/0005-deterministic-replay.md`.

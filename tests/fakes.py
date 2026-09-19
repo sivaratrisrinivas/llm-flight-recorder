@@ -27,7 +27,9 @@ class FakeCausalLMAdapter:
         prompt_ids: list[int] | None = None,
         supports_seed: bool = True,
         supports_logits: bool = True,
+        supports_replay: bool = True,
         name: str = "fake-lm",
+        revision: str | None = None,
     ) -> None:
         self._logits = logits
         self._logits_for_prefix = logits_for_prefix or {}
@@ -35,7 +37,9 @@ class FakeCausalLMAdapter:
         self._prompt_ids = prompt_ids
         self._supports_seed = supports_seed
         self._supports_logits = supports_logits
+        self._supports_replay = supports_replay
         self._name = name
+        self._revision = revision
         self.prefixes: list[tuple[int, ...]] = []
 
     @property
@@ -46,12 +50,12 @@ class FakeCausalLMAdapter:
             supports_attention=False,
             supports_hidden_states=False,
             supports_seed=self._supports_seed,
-            supports_replay=True,
+            supports_replay=self._supports_replay,
         )
 
     @property
     def model_config(self) -> ModelConfig:
-        return ModelConfig(provider="test", name=self._name)
+        return ModelConfig(provider="test", name=self._name, revision=self._revision)
 
     @property
     def vocab_size(self) -> int:
