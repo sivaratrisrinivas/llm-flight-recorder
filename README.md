@@ -69,7 +69,44 @@ B=$(llmfr record "Hello" --store .llmfr --max-new-tokens 6 --seed 2)
 llmfr compare "$A" "$B" --store .llmfr
 ```
 
-That is Demo 1: same prompt, different `--seed`. Compare names the first split; later token, context, and logit diffs are downstream, not a second root cause. Demo 2 keeps the seed and changes temperature:
+That is Demo 1: same prompt, different `--seed`. Compare names the first split; later token, context, and logit diffs are downstream, not a second root cause. Captured `sshleifer/tiny-gpt2` report (real scores, not invented):
+
+```
+compare a=7d2b9710-9131-470d-abf8-91cb5374b155 b=51594c38-fe66-4436-8bb3-bb41e39dfaf3
+
+CONFIG DIFFERENCE
+  generation_config.seed: 1 vs 2
+
+EXECUTION
+  recorded length: 6 vs 6 steps
+  same steps: (none; paths split at step 0)
+
+FIRST BEHAVIORAL DIVERGENCE
+  step 0
+  class: sampling
+  differences: sampled_token
+  sampled token: 'ether' (id=6750) vs ' titan' (id=48047)
+  reason: same context, captured logits, and decoding config; sampled tokens differ
+
+LIKELY ENABLING CONFIG
+  generation_config.seed: 1 vs 2
+  seed difference likely enabled this sampling split
+
+Steps 1+: downstream effects
+  later context, logit, and token diffs are not a new root cause
+  step 1 (not root cause): full_history, model_visible_context, raw_logits, probabilities, sampled_token ('IENCE' (id=42589) vs ' humankind' (id=47634))
+  step 2 (not root cause): full_history, model_visible_context, raw_logits, probabilities, sampled_token ('otomy' (id=38385) vs ' Mich' (id=2843))
+  step 3 (not root cause): full_history, model_visible_context, raw_logits, probabilities, sampled_token (' Naz' (id=12819) vs 'ios' (id=4267))
+  step 4 (not root cause): full_history, model_visible_context, raw_logits, probabilities, sampled_token ('pex' (id=24900) vs ' ascending' (id=41988))
+  step 5 (not root cause): full_history, model_visible_context, raw_logits, probabilities, sampled_token (' peas' (id=22589) vs ' Bust' (id=36988))
+
+notes
+  Later context and logit diffs are downstream of the first divergence, not a new root cause.
+
+diverged
+```
+
+Demo 2 keeps the seed and changes temperature:
 
 ```bash
 C=$(llmfr record "Hello" --store .llmfr --max-new-tokens 6 --seed 1 --temperature 0.7)
@@ -77,7 +114,25 @@ D=$(llmfr record "Hello" --store .llmfr --max-new-tokens 6 --seed 1 --temperatur
 llmfr compare "$C" "$D" --store .llmfr
 ```
 
-Captured `sshleifer/tiny-gpt2` output (real logits, not invented) is in `docs/demo.md`. Replay the exact reports without a model:
+First split is `decoding config`, not a second sampling root cause:
+
+```
+CONFIG DIFFERENCE
+  generation_config.temperature: 0.7 vs 1.2
+
+EXECUTION
+  recorded length: 6 vs 6 steps
+  same steps: (none; paths split at step 0)
+
+FIRST BEHAVIORAL DIVERGENCE
+  step 0
+  class: decoding config
+  differences: sampled_token
+  sampled token: 'ician' (id=6749) vs 'ether' (id=6750)
+  reason: captured logits match; temperature, do_sample, or other sampler settings differ
+```
+
+Full reports (including inspect) live in `docs/demo.md`. Replay the exact reports without a model:
 
 ```bash
 llmfr compare examples/demo/demo1_a.jsonl examples/demo/demo1_b.jsonl

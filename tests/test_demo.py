@@ -80,6 +80,17 @@ def test_readme_is_what_why_how_essentials_only() -> None:
     assert "docs/demo.md" in text
     assert "docs/adr/" in text
     assert "examples/demo/demo1_a.jsonl" in text
+    demo1 = (CAPTURES / "demo1_compare.txt").read_text(encoding="utf-8").strip()
+    demo2 = (CAPTURES / "demo2_compare.txt").read_text(encoding="utf-8")
+    demo2_excerpt = "\n".join(demo2.splitlines()[2:15])
+    assert demo1 in text
+    assert demo2_excerpt in text
+    assert demo2_excerpt in demo2
+    assert "class: sampling" in text
+    assert "sampled token: 'ether' (id=6750) vs ' titan' (id=48047)" in text
+    assert "step 1 (not root cause)" in text
+    assert "class: decoding config" in text
+    assert "sampled token: 'ician' (id=6749) vs 'ether' (id=6750)" in text
 
 
 def test_demo_markdown_embeds_captured_reports() -> None:
