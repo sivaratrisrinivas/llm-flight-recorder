@@ -152,7 +152,11 @@ A config-only compare (seed differs, recorded tokens still match) names the conf
 python scripts/capture_demo.py --backend hf
 ```
 
-Writes `examples/demo/*.jsonl` and the sibling compare/inspect captures. `--backend fake` is refused unless you pass `--force`; that path is only for boxes that cannot load tiny-gpt2, and it replaces real logits.
+Writes `examples/demo/*.jsonl` and the sibling compare/inspect captures. Inspect and compare subprocesses must succeed (non-empty stdout); a failed inspect is not written. `--backend fake` never overwrites `examples/demo` (even with `--force`): flat fake logits can classify a seed split as `sampling` and would desync inspect from the JSONL. For a scratch fake capture that also writes inspect:
+
+```bash
+python scripts/capture_demo.py --backend fake --out /tmp/llmfr-demo-fake
+```
 
 ## Limitations
 

@@ -1,9 +1,10 @@
 """Record the portfolio demo traces and compare reports.
 
 Default path uses the live Hugging Face adapter (`sshleifer/tiny-gpt2` on
-CPU) through the public `llmfr` CLI. Pass `--backend fake --force` only when
-you cannot run tiny-gpt2; that overwrites the checked-in fixtures with the
-in-repo fake adapter. Do not hand-edit logits into the fixtures.
+CPU) through the public `llmfr` CLI. `--backend fake` never overwrites
+`examples/demo` (docs/demo.md and tests lock those files to tiny-gpt2).
+Pass `--out DIR` for a scratch fake-adapter capture that also writes inspect
+and an honest `SOURCE.txt`. Do not hand-edit logits into the fixtures.
 """
 
 from __future__ import annotations
@@ -13,9 +14,9 @@ import shutil
 import subprocess
 import sys
 import tempfile
+from collections.abc import Sequence
 from pathlib import Path
 
-from llmfr.compare import compare_traces, format_compare_result
 from llmfr.core.schema import GenerationConfig, dumps_jsonl, load_path
 from llmfr.record import record_generation
 
@@ -26,14 +27,15 @@ if str(ROOT) not in sys.path:
 from tests.fakes import FakeCausalLMAdapter  # noqa: E402
 
 DEMO_DIR = ROOT / "examples" / "demo"
-FIXTURES = DEMO_DIR
-CAPTURES = DEMO_DIR
 
 PROMPT = "Hello"
 MAX_NEW_TOKENS = 6
 DEMO1_SEEDS = (1, 2)
 DEMO2_SEED = 1
 DEMO2_TEMPERATURES = (0.7, 1.2)
+
+_COMPARE_EXIT = frozenset({0, 1})
+_OK_EXIT = frozenset({0})
 
 
 def _flat_adapter() -> FakeCausalLMAdapter:
@@ -54,15 +56,35 @@ def _flat_adapter() -> FakeCausalLMAdapter:
     )
 
 
-def _write_pair(name: str, trace_a_src: Path, trace_b_src: Path) -> tuple[Path, Path]:
-    FIXTURES.mkdir(parents=True, exist_ok=True)
-    CAPTURES.mkdir(parents=True, exist_ok=True)
-    dest_a = FIXTURES / f"{name}_a.jsonl"
-    dest_b = FIXTURES / f"{name}_b.jsonl"
+def _docs_bound(path: Path) -> bool:
+    return path.resolve() == DEMO_DIR.resolve()
+
+
+def _checked_run(
+    cmd: Sequence[str],
+    *,
+    name: str,
+    allowed: frozenset[int],
+) -> subprocess.CompletedProcess[str]:
+    proc = subprocess.run(cmd, check=False, capture_output=True, text=True)
+    detail = (proc.stderr or proc.stdout or "no output").strip()
+    if proc.returncode not in allowed:
+        raise RuntimeError(f"{name} failed ({proc.returncode}): {detail}")
+    if not proc.stdout.strip():
+        raise RuntimeError(f"{name} exited {proc.returncode} with empty stdout: {detail}")
+    return proc
+
+
+def _llmfr(*args: str) -> list[str]:
+    return [sys.executable, "-m", "llmfr", *args]
+
+
+def _copy_pair(out: Path, name: str, trace_a_src: Path, trace_b_src: Path) -> tuple[Path, Path]:
+    out.mkdir(parents=True, exist_ok=True)
+    dest_a = out / f"{name}_a.jsonl"
+    dest_b = out / f"{name}_b.jsonl"
     shutil.copyfile(trace_a_src, dest_a)
     shutil.copyfile(trace_b_src, dest_b)
-    report = format_compare_result(compare_traces(load_path(dest_a), load_path(dest_b)))
-    (CAPTURES / f"{name}_compare.txt").write_text(report, encoding="utf-8")
     return dest_a, dest_b
 
 
@@ -76,10 +98,10 @@ def _store_path(store_root: Path, trace_id: str) -> Path:
     raise FileNotFoundError(f"recorded trace not found: {trace_id}")
 
 
-def _write_source(*, backend: str, model: str, revision: str | None) -> None:
-    CAPTURES.mkdir(parents=True, exist_ok=True)
+def _write_source(out: Path, *, backend: str, model: str, revision: str | None) -> None:
+    out.mkdir(parents=True, exist_ok=True)
     revision_line = "" if revision is None else f"revision={revision}\n"
-    (CAPTURES / "SOURCE.txt").write_text(
+    (out / "SOURCE.txt").write_text(
         f"backend={backend}\n"
         f"model={model}\n"
         f"{revision_line}"
@@ -92,72 +114,74 @@ def _write_source(*, backend: str, model: str, revision: str | None) -> None:
     )
 
 
-def capture_hf() -> str:
+def _write_cli_reports(out: Path, dest_1a: Path, dest_1b: Path, dest_2a: Path, dest_2b: Path) -> str:
+    compare1 = _checked_run(
+        _llmfr("compare", str(dest_1a), str(dest_1b)),
+        name="compare demo1",
+        allowed=_COMPARE_EXIT,
+    )
+    compare2 = _checked_run(
+        _llmfr("compare", str(dest_2a), str(dest_2b)),
+        name="compare demo2",
+        allowed=_COMPARE_EXIT,
+    )
+    inspect = _checked_run(
+        _llmfr("inspect", str(dest_1a), "--step", "0"),
+        name="inspect demo1 step 0",
+        allowed=_OK_EXIT,
+    )
+    (out / "demo1_compare.txt").write_text(compare1.stdout, encoding="utf-8")
+    (out / "demo2_compare.txt").write_text(compare2.stdout, encoding="utf-8")
+    (out / "demo1_inspect_step0.txt").write_text(inspect.stdout, encoding="utf-8")
+    return compare1.stdout + compare2.stdout
+
+
+def capture_hf(out: Path = DEMO_DIR) -> str:
     with tempfile.TemporaryDirectory(prefix="llmfr-demo-") as raw:
         store = Path(raw)
 
         def record(seed: int, temperature: float) -> str:
-            cmd = [
-                sys.executable,
-                "-m",
-                "llmfr",
-                "record",
-                PROMPT,
-                "--store",
-                str(store),
-                "--max-new-tokens",
-                str(MAX_NEW_TOKENS),
-                "--seed",
-                str(seed),
-                "--temperature",
-                str(temperature),
-            ]
-            proc = subprocess.run(cmd, check=False, capture_output=True, text=True)
-            if proc.returncode != 0:
-                raise RuntimeError(
-                    f"record failed ({proc.returncode}): {proc.stderr or proc.stdout}"
-                )
+            proc = _checked_run(
+                _llmfr(
+                    "record",
+                    PROMPT,
+                    "--store",
+                    str(store),
+                    "--max-new-tokens",
+                    str(MAX_NEW_TOKENS),
+                    "--seed",
+                    str(seed),
+                    "--temperature",
+                    str(temperature),
+                ),
+                name="record",
+                allowed=_OK_EXIT,
+            )
             return proc.stdout.strip()
 
         id_1a = record(DEMO1_SEEDS[0], 1.0)
         id_1b = record(DEMO1_SEEDS[1], 1.0)
-        dest_1a, dest_1b = _write_pair(
-            "demo1", _store_path(store, id_1a), _store_path(store, id_1b)
-        )
-        compare1 = subprocess.run(
-            [sys.executable, "-m", "llmfr", "compare", str(dest_1a), str(dest_1b)],
-            check=False,
-            capture_output=True,
-            text=True,
-        )
+        dest_1a, dest_1b = _copy_pair(out, "demo1", _store_path(store, id_1a), _store_path(store, id_1b))
         id_2a = record(DEMO2_SEED, DEMO2_TEMPERATURES[0])
         id_2b = record(DEMO2_SEED, DEMO2_TEMPERATURES[1])
-        dest_2a, dest_2b = _write_pair(
-            "demo2", _store_path(store, id_2a), _store_path(store, id_2b)
-        )
-        compare2 = subprocess.run(
-            [sys.executable, "-m", "llmfr", "compare", str(dest_2a), str(dest_2b)],
-            check=False,
-            capture_output=True,
-            text=True,
-        )
-        inspect = subprocess.run(
-            [sys.executable, "-m", "llmfr", "inspect", str(dest_1a), "--step", "0"],
-            check=False,
-            capture_output=True,
-            text=True,
-        )
-        (CAPTURES / "demo1_inspect_step0.txt").write_text(inspect.stdout, encoding="utf-8")
+        dest_2a, dest_2b = _copy_pair(out, "demo2", _store_path(store, id_2a), _store_path(store, id_2b))
+        reports = _write_cli_reports(out, dest_1a, dest_1b, dest_2a, dest_2b)
         loaded = load_path(dest_1a)
         _write_source(
+            out,
             backend="huggingface",
             model=loaded.model.name,
             revision=loaded.model.revision,
         )
-        return compare1.stdout + compare2.stdout
+        return reports
 
 
-def capture_fake() -> str:
+def capture_fake(out: Path) -> str:
+    if _docs_bound(out):
+        raise RuntimeError(
+            "refusing to overwrite docs-bound captures in examples/demo; "
+            "those are sshleifer/tiny-gpt2 CLI traces used by docs/demo.md"
+        )
     demo1_a = record_generation(
         _flat_adapter(),
         PROMPT,
@@ -206,21 +230,21 @@ def capture_fake() -> str:
         capture_k=5,
         source="demo-fixture",
     )
-    FIXTURES.mkdir(parents=True, exist_ok=True)
-    CAPTURES.mkdir(parents=True, exist_ok=True)
-    (FIXTURES / "demo1_a.jsonl").write_text(dumps_jsonl(demo1_a), encoding="utf-8")
-    (FIXTURES / "demo1_b.jsonl").write_text(dumps_jsonl(demo1_b), encoding="utf-8")
-    (FIXTURES / "demo2_a.jsonl").write_text(dumps_jsonl(demo2_a), encoding="utf-8")
-    (FIXTURES / "demo2_b.jsonl").write_text(dumps_jsonl(demo2_b), encoding="utf-8")
-    report1 = format_compare_result(compare_traces(demo1_a, demo1_b))
-    report2 = format_compare_result(compare_traces(demo2_a, demo2_b))
-    (CAPTURES / "demo1_compare.txt").write_text(report1, encoding="utf-8")
-    (CAPTURES / "demo2_compare.txt").write_text(report2, encoding="utf-8")
-    _write_source(backend="fake", model="fake-lm", revision=None)
-    return report1 + report2
+    out.mkdir(parents=True, exist_ok=True)
+    dest_1a = out / "demo1_a.jsonl"
+    dest_1b = out / "demo1_b.jsonl"
+    dest_2a = out / "demo2_a.jsonl"
+    dest_2b = out / "demo2_b.jsonl"
+    dest_1a.write_text(dumps_jsonl(demo1_a), encoding="utf-8")
+    dest_1b.write_text(dumps_jsonl(demo1_b), encoding="utf-8")
+    dest_2a.write_text(dumps_jsonl(demo2_a), encoding="utf-8")
+    dest_2b.write_text(dumps_jsonl(demo2_b), encoding="utf-8")
+    reports = _write_cli_reports(out, dest_1a, dest_1b, dest_2a, dest_2b)
+    _write_source(out, backend="fake", model="fake-lm", revision=None)
+    return reports
 
 
-def main() -> int:
+def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--backend",
@@ -229,20 +253,29 @@ def main() -> int:
         help="hf: live sshleifer/tiny-gpt2 via the CLI. fake: in-repo adapter.",
     )
     parser.add_argument(
+        "--out",
+        default=None,
+        help="Directory for capture files. Fake backend cannot use examples/demo.",
+    )
+    parser.add_argument(
         "--force",
         action="store_true",
-        help="Allow --backend fake to overwrite checked-in Hugging Face fixtures.",
+        help="Does not override the fake-backend refusal to overwrite examples/demo.",
     )
-    args = parser.parse_args()
+    args = parser.parse_args(None if argv is None else list(argv))
+    out = DEMO_DIR if args.out is None else Path(args.out)
     if args.backend == "fake":
-        if not args.force:
+        if _docs_bound(out):
+            extra = " (--force does not override this)" if args.force else ""
             sys.stderr.write(
-                "error: --backend fake overwrites real tiny-gpt2 fixtures; pass --force\n"
+                "error: refusing to overwrite docs-bound captures in examples/demo; "
+                "pass --out DIR for a scratch fake-adapter capture that includes inspect"
+                f"{extra}\n"
             )
             return 2
-        sys.stdout.write(capture_fake())
+        sys.stdout.write(capture_fake(out))
         return 0
-    sys.stdout.write(capture_hf())
+    sys.stdout.write(capture_hf(out))
     return 0
 
 
