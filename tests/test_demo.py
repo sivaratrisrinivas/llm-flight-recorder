@@ -47,6 +47,8 @@ def test_readme_is_what_why_how_essentials_only() -> None:
     assert "\u2014" not in text
     assert "\u2013" not in text
     mermaid = _first_mermaid_block(text)
+    assert "prompt[prompt] --> rec" in mermaid
+    assert "prompt[prompt] --> adapter" not in mermaid
     subgraph_start = mermaid.find("subgraph rec [recorder loop]")
     assert subgraph_start != -1
     subgraph_end = mermaid.find("\n  end", subgraph_start)
@@ -63,6 +65,9 @@ def test_readme_is_what_why_how_essentials_only() -> None:
     found = [loop.find(edge) for edge in loop_edges]
     assert all(index >= 0 for index in found)
     assert found == sorted(found)
+    assert "adapter[adapter]" in loop
+    assert 'adapter -->|"encode once"| hist' in loop
+    assert 'adapter -->|"next_token_logits each step"| vis' in loop
     assert "TraceStore" in text
     assert "first divergence" in text
     assert "downstream effects" in text

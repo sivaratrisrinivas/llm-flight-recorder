@@ -10,12 +10,11 @@ Prompt and final-string logs cannot tell those apart. Two outputs can differ bec
 
 ## Architecture
 
-Prompt goes to an adapter, then the recorder loop, then TraceStore. Replay, compare, and inspect read stored traces. Compare does not call a model.
+Prompt goes to the recorder. The adapter encodes once, then supplies `next_token_logits` each step. TraceStore holds the result. Replay, compare, and inspect read stored traces. Compare does not call a model.
 
 ```mermaid
 flowchart TD
-  prompt[prompt] --> adapter[adapter]
-  adapter --> rec
+  prompt[prompt] --> rec
   subgraph rec [recorder loop]
     direction LR
     hist[full history] --> vis[model-visible context]
@@ -24,6 +23,9 @@ flowchart TD
     temp --> probs[probs]
     probs --> sample[sample]
     sample --> append[append]
+    adapter[adapter]
+    adapter -->|"encode once"| hist
+    adapter -->|"next_token_logits each step"| vis
   end
   rec --> store[TraceStore]
   store --> sqlite[SQLite index]
