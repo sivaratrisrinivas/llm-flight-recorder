@@ -58,7 +58,9 @@ select = ["E", "F", "I", "UP", "B"]
 quote-style = "double"
 
 [tool.mypy]
-python_version = "3.11"
+# Match CI (Python 3.12). numpy>=2.5 stubs use PEP 695 `type` statements that
+# mypy rejects when python_version is 3.11, even on a 3.12 runtime.
+python_version = "3.12"
 mypy_path = "src"
 packages = ["llmfr"]
 strict = true
