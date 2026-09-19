@@ -18,7 +18,7 @@ _HF_CAPABILITIES = AdapterCapabilities(
     supports_logprobs=True,
     supports_attention=False,
     supports_hidden_states=False,
-    supports_seed=False,
+    supports_seed=True,
     supports_replay=True,
 )
 
@@ -59,8 +59,11 @@ class HuggingFaceCausalLMAdapter:
     second model API. Attention and hidden states are not returned here even
     though some HF models can compute them.
 
-    Sampling is Milestone 3. This adapter does not take a seed and does not
-    call `torch.manual_seed`; `supports_seed` is False until then.
+    Sampling lives in the M3 recorder, not in this forward pass. Eval logits
+    are deterministic for a given prefix. `supports_seed` is True because
+    `GenerationConfig.seed` is consumed by the recorder's isolated
+    `random.Random` (see `docs/adr/0004-recorder-loop.md`). This adapter does
+    not call `torch.manual_seed`.
     """
 
     def __init__(

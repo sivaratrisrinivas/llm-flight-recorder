@@ -2,9 +2,9 @@
 
 Adapters turn a model-visible token prefix into whatever the backend can
 honestly expose. Hugging Face causal LMs return raw next-token logits.
-Hosted HTTP APIs often cannot. Capability flags record that difference so a
-later recorder (M3) can store `logits.mode=topk` or `logits.mode=none`
-without inventing scores.
+Hosted HTTP APIs often cannot. Capability flags record that difference so the
+recorder (M3) can store `logits.mode=topk` or `logits.mode=none` without
+inventing scores.
 """
 
 from __future__ import annotations

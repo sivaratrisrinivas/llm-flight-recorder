@@ -3,12 +3,16 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
 from pytest import CaptureFixture
 
-from llmfr.cli import run
+from llmfr.adapters.huggingface import HuggingFaceCausalLMAdapter, HuggingFaceExtraMissingError
+from llmfr.cli import build_parser, run
 from llmfr.core.schema import dumps_json
 from llmfr.core.version import SCHEMA_VERSION, __version__
+from llmfr.storage import TraceStore
 from tests.factories import make_trace
+from tests.fakes import FakeCausalLMAdapter
 
 
 def test_cli_version(capsys: CaptureFixture[str]) -> None:
@@ -57,6 +61,40 @@ def test_cli_validate_invalid_trace(tmp_path: Path, capsys: CaptureFixture[str])
     assert run(["validate", str(path)]) == 1
     err = capsys.readouterr().err
     assert "error:" in err
+    assert "Traceback" not in err
+
+
+def test_cli_record_is_listed() -> None:
+    help_text = build_parser().format_help()
+    assert "record" in help_text
+    assert "Replay and compare commands are not available yet." in help_text
+
+
+def test_cli_record_prints_trace_id(
+    tmp_path: Path, capsys: CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    adapter = FakeCausalLMAdapter(prompt_ids=[1, 2])
+    monkeypatch.setattr("llmfr.cli._build_hf_adapter", lambda **_kwargs: adapter)
+    code = run(["record", "hello", "--store", str(tmp_path), "--max-new-tokens", "2", "--greedy"])
+    assert code == 0
+    out = capsys.readouterr().out.strip()
+    loaded = TraceStore(tmp_path).get(out)
+    assert len(loaded.events) == 2
+    assert loaded.run_metadata.source == "cli"
+    assert loaded.run_metadata.prompt == "hello"
+
+
+def test_cli_record_missing_hf_extra(
+    monkeypatch: pytest.MonkeyPatch, capsys: CaptureFixture[str]
+) -> None:
+    def _boom(self: HuggingFaceCausalLMAdapter, *args: object, **kwargs: object) -> None:
+        raise HuggingFaceExtraMissingError()
+
+    monkeypatch.setattr(HuggingFaceCausalLMAdapter, "__init__", _boom)
+    assert run(["record", "hello"]) == 1
+    err = capsys.readouterr().err
+    assert "error:" in err
+    assert "download.pytorch.org/whl/cpu" in err
     assert "Traceback" not in err
 
 
