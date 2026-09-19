@@ -54,7 +54,7 @@ Inspect CLI: `llmfr version`, `validate`, and `topk`.
 
 Not in M3: replay, compare, or a polished record CLI.
 
-## Milestone 4 (done on this branch)
+## Milestone 4 (done)
 
 - Replay a stored Trace as far as the runtime permits, using the recorded
   seed, effective `generation_config`, and Hub revision pin
@@ -68,9 +68,23 @@ Not in M3: replay, compare, or a polished record CLI.
   (`docs/adr/0005-deterministic-replay.md`)
 - Minimal `llmfr replay TRACE_ID` against the existing TraceStore layout
 
-Not in M4: compare / first-divergence (M5), downstream-effects (M6), or a
-polished CLI (M7). A token match is not reported as a full numeric match
-when logits differ.
+## Milestone 5 (done on this branch)
+
+- Two-trace compare. Config difference report covers seed, temperature,
+  model id/revision, prompt/history, tokenizer, and other
+  `generation_config` / `run_metadata` fields that matter
+- Walks both traces token-by-token and classifies the first causal split
+  as one of: prompt/history, tokenizer, model-visible context,
+  model/version, raw-logit, decoding config, probability distribution,
+  sampling, unknown/runtime
+- Later context and logit diffs after that point are tagged **downstream**,
+  not a new root cause (Case E)
+- `llmfr compare TRACE_A TRACE_B` prints a short report (`--json` for
+  structured `CompareResult`). TRACE_A/B may be files or TraceStore ids
+- Core classification tests use stored traces and the fake adapter. They
+  do not invent logits for hosted `logits.mode=none` traces
+
+Not in M5: deep root-cause narrative (M6) or a polished CLI (M7).
 
 ## Install and test
 
@@ -78,7 +92,7 @@ Core (schema, storage, inspect CLI, recorder unit tests with a fake adapter):
 
 ```bash
 pip install -e ".[dev]"
-pytest tests/test_schema.py tests/test_store.py tests/test_sample.py tests/test_recorder.py tests/test_replay.py tests/test_cli.py
+pytest tests/test_schema.py tests/test_store.py tests/test_sample.py tests/test_recorder.py tests/test_replay.py tests/test_compare.py tests/test_cli.py
 ruff check src tests
 ruff format --check src tests
 mypy
@@ -104,11 +118,14 @@ pytest tests/test_recorder_hf.py tests/test_replay_hf.py tests/test_huggingface_
 `tests/test_replay_hf.py` are marked `slow` and are skipped unless `torch`
 and `transformers` are installed. They do not stub logits.
 
-Minimal record then replay (prints `trace_id`, then a JSON `ReplayResult`):
+Minimal record, replay, then compare (prints `trace_id`, a JSON
+`ReplayResult`, then a first-divergence report):
 
 ```bash
 llmfr record "Hello" --store .llmfr --max-new-tokens 8 --greedy
 llmfr replay TRACE_ID --store .llmfr
+llmfr compare TRACE_A TRACE_B --store .llmfr
+llmfr compare path/a.jsonl path/b.jsonl
 ```
 
 ## Roadmap
@@ -116,9 +133,12 @@ llmfr replay TRACE_ID --store .llmfr
 - [x] **M1** Schema and storage
 - [x] **M2** Hugging Face adapter
 - [x] **M3** Recorder loop
-- [x] **M4** Replay (this branch)
-- [ ] **M5** Compare / first-divergence UI
+- [x] **M4** Replay
+- [x] **M5** Compare / first-divergence (this branch)
+- [ ] **M6** Downstream-effects / root-cause narrative
+- [ ] **M7** Polished CLI UX
 
 Design notes: `docs/adr/0001-v1-trace-schema.md`, `docs/adr/0002-v1-storage.md`,
 `docs/adr/0003-hf-adapter-default-model.md`, `docs/adr/0004-recorder-loop.md`,
-and `docs/adr/0005-deterministic-replay.md`.
+`docs/adr/0005-deterministic-replay.md`, and
+`docs/adr/0006-first-divergence-compare.md`.

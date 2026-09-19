@@ -8,6 +8,12 @@ from llmfr.adapters import (
     StepLogits,
 )
 from llmfr.cli import main
+from llmfr.compare import (
+    DIVERGENCE_CLASSES,
+    CompareResult,
+    compare_traces,
+    format_compare_result,
+)
 from llmfr.core import (
     DEFAULT_TOP_K,
     MAX_TOP_K,
@@ -79,6 +85,10 @@ __all__ = [
     "build_adapter_for_trace",
     "infer_max_visible_tokens",
     "replay_trace",
+    "DIVERGENCE_CLASSES",
+    "CompareResult",
+    "compare_traces",
+    "format_compare_result",
     "DuplicateTraceIdError",
     "TracePathError",
     "Environment",
