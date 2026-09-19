@@ -22,9 +22,10 @@ invent the rest, is in scope.
 
 1. **Optional extra, not the default.** `OpenAIChatAdapter` lives behind
    `llmfr[openai]` (`openai` + `tiktoken`). CLI default remains Hugging Face.
-   Select OpenAI with `--provider openai` and/or an API model name
-   (`gpt-4o-mini`, `openai:gpt-4o-mini`). `org/name` Hugging Face ids and
-   bare `gpt2` stay on the HF backend.
+   Select OpenAI with `--provider openai` or an explicit `openai:` model
+   prefix (`openai:gpt-4o-mini`). Bare names (`gpt-4o-mini`, `gpt-neo`,
+   `gpt-j`, `gpt2`) and `org/name` Hugging Face ids stay on the HF backend
+   unless `--provider openai` overrides.
 
 2. **Capability flags stay conservative.**
    - `supports_logits=False` — `top_logprobs` is not a vocab vector.

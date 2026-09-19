@@ -213,8 +213,9 @@ def record(
         typer.Option(
             "--model",
             help=(
-                "Hugging Face model id (default: sshleifer/tiny-gpt2) or OpenAI "
-                "model name (gpt-4o-mini, or openai:gpt-4o-mini)."
+                "Hugging Face model id (default: sshleifer/tiny-gpt2). "
+                "OpenAI requires --provider openai or an openai: prefix "
+                "(openai:gpt-4o-mini)."
             ),
         ),
     ] = None,
@@ -223,8 +224,8 @@ def record(
         typer.Option(
             "--provider",
             help=(
-                "Backend: huggingface (default, local/CI) or openai. OpenAI also "
-                f"selected when --model looks like an API name. Reads {OPENAI_KEY_ENV} "
+                "Backend: huggingface (default, local/CI) or openai. OpenAI is also "
+                f"selected when --model has an openai: prefix. Reads {OPENAI_KEY_ENV} "
                 "from the environment; there is no API-key flag."
             ),
         ),

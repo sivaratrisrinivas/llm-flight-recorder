@@ -279,6 +279,8 @@ def test_cli_record_replay_compare_help(capsys: CaptureFixture[str]) -> None:
     assert "LocalRNG" in record_help
     assert "Hugging Face" in record_help
     assert "API request field" in record_help
+    assert "openai:" in record_help
+    assert "looks like an API name" not in record_help
 
 
 def test_cli_record_twice_then_compare_identical(
@@ -451,7 +453,7 @@ def test_cli_record_openai_mocked(
     assert "top-k" in inspect_out
 
 
-def test_cli_record_openai_model_name_selects_backend(
+def test_cli_record_openai_prefix_selects_backend(
     tmp_path: Path, capsys: CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     from llmfr.adapters.openai import OpenAIChatAdapter
@@ -480,7 +482,7 @@ def test_cli_record_openai_model_name_selects_backend(
             "record",
             "Hi",
             "--model",
-            "gpt-4o-mini",
+            "openai:gpt-4o-mini",
             "--store",
             str(tmp_path),
             "--max-new-tokens",
@@ -490,7 +492,45 @@ def test_cli_record_openai_model_name_selects_backend(
     )
     assert code == 0
     capsys.readouterr()
-    assert built == ["gpt-4o-mini"]
+    assert built == ["openai:gpt-4o-mini"]
+
+
+def test_cli_record_bare_gpt_name_stays_huggingface(
+    tmp_path: Path, capsys: CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    openai_built: list[str] = []
+    hf_built: list[str] = []
+
+    def _openai(**_kwargs: object) -> None:
+        openai_built.append(str(_kwargs.get("model_id")))
+        raise AssertionError("bare gpt-* must not auto-select OpenAI")
+
+    def _hf(*, model_id: str | None, max_visible_tokens: int | None) -> FakeCausalLMAdapter:
+        hf_built.append(str(model_id))
+        return FakeCausalLMAdapter(prompt_ids=[1, 2])
+
+    monkeypatch.setattr("llmfr.cli._build_openai_adapter", _openai)
+    monkeypatch.setattr("llmfr.cli._build_hf_adapter", _hf)
+    for name in ("gpt-4o-mini", "gpt-neo", "gpt-j"):
+        openai_built.clear()
+        hf_built.clear()
+        code = run(
+            [
+                "record",
+                "Hi",
+                "--model",
+                name,
+                "--store",
+                str(tmp_path),
+                "--max-new-tokens",
+                "1",
+                "--greedy",
+            ]
+        )
+        assert code == 0
+        capsys.readouterr()
+        assert openai_built == []
+        assert hf_built == [name]
 
 
 def test_cli_record_openai_missing_key(

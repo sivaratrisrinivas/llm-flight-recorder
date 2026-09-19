@@ -249,10 +249,16 @@ def test_provider_selection_keeps_hf_default() -> None:
     assert resolve_record_provider(None, None) == "huggingface"
     assert resolve_record_provider(None, "sshleifer/tiny-gpt2") == "huggingface"
     assert resolve_record_provider(None, "gpt2") == "huggingface"
-    assert resolve_record_provider(None, "gpt-4o-mini") == "openai"
+    assert resolve_record_provider(None, "gpt-4o-mini") == "huggingface"
+    assert resolve_record_provider(None, "gpt-neo") == "huggingface"
+    assert resolve_record_provider(None, "gpt-j") == "huggingface"
+    assert resolve_record_provider(None, "o1-mini") == "huggingface"
     assert resolve_record_provider(None, "openai:gpt-4o-mini") == "openai"
     assert resolve_record_provider("openai", "sshleifer/tiny-gpt2") == "openai"
+    assert resolve_record_provider("openai", "gpt-neo") == "openai"
+    assert resolve_record_provider("openai", "gpt-4o-mini") == "openai"
     assert resolve_record_provider("huggingface", "gpt-4o-mini") == "huggingface"
+    assert resolve_record_provider("huggingface", "openai:gpt-4o-mini") == "huggingface"
     assert resolve_record_provider("hf", None) == "huggingface"
     with pytest.raises(ValueError, match="unknown provider"):
         resolve_record_provider("langchain", None)
@@ -261,5 +267,11 @@ def test_provider_selection_keeps_hf_default() -> None:
 def test_openai_model_name_strips_prefix() -> None:
     assert openai_model_name("openai:gpt-4o-mini") == "gpt-4o-mini"
     assert openai_model_name("gpt-4o-mini") == "gpt-4o-mini"
-    assert looks_like_openai_model("o1-mini") is True
+    assert looks_like_openai_model("openai:gpt-4o-mini") is True
+    assert looks_like_openai_model("OPENAI:gpt-4o-mini") is True
+    assert looks_like_openai_model("gpt-4o-mini") is False
+    assert looks_like_openai_model("gpt-neo") is False
+    assert looks_like_openai_model("gpt-j") is False
+    assert looks_like_openai_model("o1-mini") is False
+    assert looks_like_openai_model("chatgpt-4o") is False
     assert looks_like_openai_model("openai-community/gpt2") is False

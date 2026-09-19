@@ -84,22 +84,13 @@ def _import_backend() -> tuple[Any, Any]:
 
 
 def looks_like_openai_model(model_id: str) -> bool:
-    """True for OpenAI API model names, not Hugging Face `org/name` ids.
+    """True only for an explicit ``openai:`` prefix.
 
-    `gpt2` (no hyphen after gpt) stays Hugging Face. `openai:gpt-4o-mini`
-    and `gpt-4o-mini` select OpenAI.
+    Bare names (``gpt-4o-mini``, ``gpt-neo``, ``gpt-j``, ``gpt2``) stay
+    Hugging Face unless ``--provider openai`` is set. The prefix is stripped
+    later by ``openai_model_name``.
     """
-    name = model_id.strip()
-    lowered = name.lower()
-    if lowered.startswith("openai:"):
-        return True
-    if "/" in name:
-        return False
-    if lowered.startswith("gpt-"):
-        return True
-    if lowered.startswith(("o1", "o3", "o4")):
-        return True
-    return lowered.startswith("chatgpt-")
+    return model_id.strip().lower().startswith("openai:")
 
 
 def openai_model_name(model_id: str) -> str:

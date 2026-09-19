@@ -141,7 +141,7 @@ llmfr inspect examples/demo/demo1_a.jsonl --step 0
 
 `--greedy` on both records is the identical path (exit 0). `llmfr inspect TRACE --step N` shows history vs visible context plus that step's top-k. `llmfr replay TRACE_ID` needs a store id. Exit 0 means compare traces identical, or replay status `reproduced`. Exit 1 is an expected failure (including a diverged compare). Exit 2 is a usage error. `llmfr --help` lists the rest (`validate`, `topk`, `version`).
 
-OpenAI is an optional extra, not the default. `pip install -e '.[openai]'`, set `OPENAI_API_KEY` in the environment (no `--api-key` flag), then `llmfr record "Hello" --provider openai --model gpt-4o-mini`. The adapter stores `top_logprobs` when the API returns them. If the response omits per-token logprob content, recording fails closed (no tiktoken-reconstructed steps). That is not a full-vocab logit vector, and `llmfr replay` of an OpenAI trace is `not_replayable`. Hugging Face remains the local/CI path. See `docs/adr/0009-openai-adapter.md`.
+OpenAI is an optional extra, not the default. `pip install -e '.[openai]'`, set `OPENAI_API_KEY` in the environment (no `--api-key` flag), then `llmfr record "Hello" --provider openai --model gpt-4o-mini` (or `--model openai:gpt-4o-mini`). Bare `gpt-*` names stay Hugging Face unless `--provider openai` or the `openai:` prefix is set. The adapter stores `top_logprobs` when the API returns them. If the response omits per-token logprob content, recording fails closed (no tiktoken-reconstructed steps). That is not a full-vocab logit vector, and `llmfr replay` of an OpenAI trace is `not_replayable`. Hugging Face remains the local/CI path. See `docs/adr/0009-openai-adapter.md`.
 
 ## Essentials
 
