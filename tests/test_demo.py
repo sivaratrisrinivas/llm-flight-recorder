@@ -16,7 +16,7 @@ DEMO_DIR = REPO / "examples" / "demo"
 FIXTURES = DEMO_DIR
 CAPTURES = DEMO_DIR
 
-README_SECTIONS = ("What", "Why", "How", "Essentials")
+README_SECTIONS = ("What", "Why", "Architecture", "How", "Essentials")
 ADR_LINKS = (
     "docs/adr/0001-v1-trace-schema.md",
     "docs/adr/0002-v1-storage.md",
@@ -36,6 +36,10 @@ def test_readme_is_what_why_how_essentials_only() -> None:
     assert "Milestone" not in text
     assert "\u2014" not in text
     assert "\u2013" not in text
+    assert "```mermaid" in text
+    assert "TraceStore" in text
+    assert "first divergence" in text
+    assert "downstream effects" in text
     assert "llmfr record" in text
     assert "--seed 1" in text
     assert "--seed 2" in text
