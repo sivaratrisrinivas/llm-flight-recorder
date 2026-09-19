@@ -38,8 +38,9 @@ out of scope. Help must not invite pasting secrets.
 
 5. **No invented logits.** Inspect reports `logits.mode=none` honestly.
    No API-key flags. OpenAI recording reads `OPENAI_API_KEY` from the
-   environment when `--provider openai` (or an OpenAI-shaped `--model`) is
-   selected. Hugging Face stays the default for local/CI.
+   environment when `--provider openai` or an explicit `openai:` model prefix
+   is selected. Bare `gpt-*` names stay Hugging Face. Hugging Face stays the
+   default for local/CI.
 
 ## Consequences
 
