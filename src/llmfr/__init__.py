@@ -44,6 +44,13 @@ from llmfr.record import (
     record_generation,
     softmax,
 )
+from llmfr.replay import (
+    BIT_IDENTICAL_CAVEAT,
+    ReplayResult,
+    build_adapter_for_trace,
+    infer_max_visible_tokens,
+    replay_trace,
+)
 from llmfr.storage import DuplicateTraceIdError, TraceIndexEntry, TracePathError, TraceStore
 
 __all__ = [
@@ -67,6 +74,11 @@ __all__ = [
     "is_greedy",
     "record_generation",
     "softmax",
+    "BIT_IDENTICAL_CAVEAT",
+    "ReplayResult",
+    "build_adapter_for_trace",
+    "infer_max_visible_tokens",
+    "replay_trace",
     "DuplicateTraceIdError",
     "TracePathError",
     "Environment",

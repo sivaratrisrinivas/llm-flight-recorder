@@ -1,4 +1,4 @@
-"""Minimal inspect + record CLI. Replay and compare are later milestones."""
+"""Minimal inspect, record, and replay CLI. Compare is a later milestone."""
 
 from __future__ import annotations
 
@@ -21,6 +21,7 @@ from llmfr.core.migrate import UnsupportedSchemaVersionError
 from llmfr.core.schema import GenerationConfig, Trace, load_path
 from llmfr.core.version import DEFAULT_TOP_K, SCHEMA_VERSION, __version__
 from llmfr.record import record_generation
+from llmfr.replay import ReplayResult, replay_trace
 from llmfr.storage import TraceStore
 from llmfr.storage.store import FormatName
 
@@ -47,8 +48,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="llmfr",
         description=(
-            "LLM Flight Recorder. Record a short generation or inspect stored traces. "
-            "Replay and compare commands are not available yet."
+            "LLM Flight Recorder. Record a short generation, replay a stored trace, "
+            "or inspect stored traces. Compare commands are not available yet."
         ),
     )
     sub = parser.add_subparsers(dest="command", required=True)
@@ -88,6 +89,17 @@ def build_parser() -> argparse.ArgumentParser:
         default="jsonl",
         dest="fmt",
     )
+
+    replay = sub.add_parser(
+        "replay",
+        help="Replay a stored trace and print a structured result (Milestone 4, minimal)",
+    )
+    replay.add_argument("trace_id", help="Stable trace_id from TraceStore")
+    replay.add_argument(
+        "--store",
+        default=".llmfr",
+        help="TraceStore directory (SQLite index plus traces/)",
+    )
     return parser
 
 
@@ -114,6 +126,8 @@ def run(argv: Sequence[str] | None = None) -> int:
         return 0
     if args.command == "record":
         return _cmd_record(args)
+    if args.command == "replay":
+        return _cmd_replay(args)
     raise AssertionError(f"unknown command {args.command}")
 
 
@@ -143,6 +157,26 @@ def _cmd_record(args: argparse.Namespace) -> int:
         return 1
     sys.stdout.write(f"{trace.run_metadata.trace_id}\n")
     return 0
+
+
+def _cmd_replay(args: argparse.Namespace) -> int:
+    try:
+        trace = TraceStore(Path(args.store)).get(args.trace_id)
+        result = _replay(trace)
+    except KeyError as exc:
+        sys.stderr.write(f"error: {exc}\n")
+        return 1
+    except _RECORD_ERRORS as exc:
+        sys.stderr.write(f"error: {exc}\n")
+        return 1
+    sys.stdout.write(result.model_dump_json(indent=2) + "\n")
+    if result.status == "reproduced":
+        return 0
+    return 1
+
+
+def _replay(trace: Trace) -> ReplayResult:
+    return replay_trace(trace)
 
 
 def _build_hf_adapter(
