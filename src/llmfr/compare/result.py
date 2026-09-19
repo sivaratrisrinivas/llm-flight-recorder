@@ -1,7 +1,9 @@
-"""Structured two-trace compare outcome (Milestone 5).
+"""Structured two-trace compare outcome (Milestone 5/6).
 
 First divergence is the earliest causal split. Later context or logit diffs
 are tagged downstream so they are not mistaken for a new root cause.
+Milestone 6 adds matching-prefix counts and likely enabling config for the
+human report; it does not change the M5 class of the first split.
 """
 
 from __future__ import annotations
@@ -77,6 +79,10 @@ class CompareResult(FrozenModel):
     config field of interest differs. ``first_divergence`` is the root-cause
     class for M5. ``downstream`` must not be treated as additional root
     causes (Case E).
+
+    ``likely_enabling_config`` is the subset of ``config_diffs`` that likely
+    enabled that first split. Unrelated config diffs stay in ``config_diffs``
+    only. Later logit or context diffs are never copied here.
     """
 
     trace_a: str
@@ -87,3 +93,8 @@ class CompareResult(FrozenModel):
     downstream: tuple[StepDiff, ...] = ()
     notes: tuple[str, ...] = ()
     steps: tuple[StepDiff, ...] = ()
+    matched_prefix_steps: int = 0
+    event_count_a: int = 0
+    event_count_b: int = 0
+    likely_enabling_config: tuple[ConfigDiff, ...] = ()
+    enabling_summary: str | None = None

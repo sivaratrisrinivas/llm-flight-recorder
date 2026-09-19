@@ -10,6 +10,8 @@ from llmfr.adapters import (
 from llmfr.cli import main
 from llmfr.compare import (
     DIVERGENCE_CLASSES,
+    DOWNSTREAM_NOT_ROOT_CAUSE,
+    REPORT_SECTIONS,
     CompareResult,
     compare_traces,
     format_compare_result,
@@ -86,6 +88,8 @@ __all__ = [
     "infer_max_visible_tokens",
     "replay_trace",
     "DIVERGENCE_CLASSES",
+    "DOWNSTREAM_NOT_ROOT_CAUSE",
+    "REPORT_SECTIONS",
     "CompareResult",
     "compare_traces",
     "format_compare_result",

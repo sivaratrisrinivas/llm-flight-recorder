@@ -107,7 +107,8 @@ def test_case_b_seed_split_is_sampling() -> None:
     assert "generation_config.seed" in {diff.field for diff in result.config_diffs}
     report = format_compare_result(result)
     assert "class: sampling" in report
-    assert "downstream (not root cause)" in report
+    assert "downstream effects" in report
+    assert "not a new root cause" in report
 
 
 def test_case_e_later_logit_and_context_diffs_are_downstream() -> None:
@@ -128,7 +129,9 @@ def test_case_e_later_logit_and_context_diffs_are_downstream() -> None:
     )
     assert not any(row.role == "first" for row in result.downstream)
     report = format_compare_result(result)
-    assert "not root cause" in report
+    assert "not a new root cause" in report
+    assert "class: sampling" in report
+    assert "class: raw-logit" not in report
     assert "raw-logit" not in {row.role for row in later}
 
 
@@ -375,7 +378,8 @@ def test_compare_cli_files(tmp_path: Path, capsys: CaptureFixture[str]) -> None:
     assert run(["compare", str(path_a), str(path_b)]) == 1
     out = capsys.readouterr().out
     assert "class: prompt/history" in out
-    assert "downstream (not root cause)" in out
+    assert "downstream effects" in out
+    assert "CONFIG DIFFERENCE" in out
     assert "Traceback" not in out
 
 
