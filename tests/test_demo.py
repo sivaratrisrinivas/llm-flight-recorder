@@ -37,6 +37,9 @@ def test_readme_is_what_why_how_essentials_only() -> None:
     assert "\u2014" not in text
     assert "\u2013" not in text
     assert "```mermaid" in text
+    assert "full history" in text
+    assert "model-visible context" in text
+    assert "temperature logits" in text
     assert "TraceStore" in text
     assert "first divergence" in text
     assert "downstream effects" in text

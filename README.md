@@ -18,8 +18,9 @@ flowchart TD
   adapter --> rec
   subgraph rec [recorder loop]
     direction LR
-    vis[model-visible context] --> raw[raw logits]
-    raw --> temp[temperature]
+    hist[full history] --> vis[model-visible context]
+    vis --> raw[raw logits]
+    raw --> temp[temperature logits]
     temp --> probs[probs]
     probs --> sample[sample]
     sample --> append[append]
