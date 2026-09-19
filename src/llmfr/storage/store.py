@@ -124,12 +124,12 @@ class TraceStore:
             raise FileNotFoundError(
                 f"trace file missing from store: {entry.relpath} (trace_id {trace_id})"
             )
+        text = path.read_text(encoding="utf-8")
         try:
-            text = path.read_text(encoding="utf-8")
             if entry.format == "jsonl":
                 return loads_jsonl(text)
             return loads_json(text)
-        except (OSError, TypeError, ValueError, json.JSONDecodeError) as exc:
+        except (TypeError, ValueError, json.JSONDecodeError) as exc:
             raise ValueError(
                 f"corrupt or partial trace file: {entry.relpath} (trace_id {trace_id}): {exc}"
             ) from exc
@@ -184,9 +184,24 @@ class TraceStore:
         except sqlite3.IntegrityError:
             raise
         except sqlite3.Error as exc:
-            raise ValueError(f"corrupt trace store index: {exc}") from exc
+            raise _index_error(exc) from exc
         finally:
             conn.close()
+
+
+_CORRUPT_INDEX_MARKERS = (
+    "not a database",
+    "malformed",
+    "disk image",
+    "file is encrypted",
+)
+
+
+def _index_error(exc: sqlite3.Error) -> ValueError:
+    text = str(exc).lower()
+    if any(marker in text for marker in _CORRUPT_INDEX_MARKERS):
+        return ValueError(f"corrupt trace store index: {exc}")
+    return ValueError(f"trace store index error: {exc}")
 
 
 def _preview(text: str) -> str:

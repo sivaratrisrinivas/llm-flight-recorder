@@ -297,6 +297,10 @@ def test_length_mismatch_uses_decoding_config() -> None:
     assert first.step == 1
     assert first.classification == "decoding config"
     assert first.differences == ("length",)
+    fields = {diff.field for diff in result.config_diffs}
+    assert "generation_config.max_new_tokens" in fields
+    assert "event.top_k.length" not in fields
+    assert not any("event top-k depths differ" in note for note in result.notes)
 
 
 def test_prompt_metadata_without_history_split_is_not_prompt_history() -> None:

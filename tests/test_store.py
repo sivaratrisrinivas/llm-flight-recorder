@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from llmfr.storage.store import DuplicateTraceIdError, TracePathError, TraceStore
+from llmfr.storage.store import DuplicateTraceIdError, TracePathError, TraceStore, _index_error
 from tests.factories import make_trace
 
 
@@ -151,6 +151,22 @@ def test_get_corrupt_trace_file(tmp_path: Path) -> None:
         store.get(str(trace.run_metadata.trace_id))
 
 
+def test_get_permission_error_is_not_corrupt(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store = TraceStore(tmp_path)
+    trace = make_trace()
+    store.put(trace, fmt="jsonl")
+
+    def _denied(_self: Path, *_args: object, **_kwargs: object) -> str:
+        raise PermissionError("permission denied")
+
+    monkeypatch.setattr(Path, "read_text", _denied)
+    with pytest.raises(PermissionError, match="permission denied") as excinfo:
+        store.get(str(trace.run_metadata.trace_id))
+    assert "corrupt" not in str(excinfo.value)
+
+
 def test_corrupt_index_is_clear_error(tmp_path: Path) -> None:
     root = tmp_path / "store"
     root.mkdir()
@@ -158,3 +174,15 @@ def test_corrupt_index_is_clear_error(tmp_path: Path) -> None:
     (root / "index.sqlite").write_text("not a sqlite database", encoding="utf-8")
     with pytest.raises(ValueError, match="corrupt trace store index"):
         TraceStore(root, create=False).list()
+
+
+def test_index_lock_is_not_labeled_corrupt() -> None:
+    err = _index_error(sqlite3.OperationalError("database is locked"))
+    assert str(err).startswith("trace store index error:")
+    assert "corrupt" not in str(err)
+
+
+def test_index_io_error_is_not_labeled_corrupt() -> None:
+    err = _index_error(sqlite3.OperationalError("disk I/O error"))
+    assert str(err).startswith("trace store index error:")
+    assert "corrupt" not in str(err)

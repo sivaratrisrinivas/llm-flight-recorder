@@ -344,8 +344,9 @@ def _capture_notes(trace_a: Trace, trace_b: Trace, notes: list[str]) -> None:
 
 
 def _event_topk_length_diff(trace_a: Trace, trace_b: Trace) -> ConfigDiff | None:
-    depths_a = [len(event.top_k) for event in trace_a.events]
-    depths_b = [len(event.top_k) for event in trace_b.events]
+    shared = min(len(trace_a.events), len(trace_b.events))
+    depths_a = [len(event.top_k) for event in trace_a.events[:shared]]
+    depths_b = [len(event.top_k) for event in trace_b.events[:shared]]
     if depths_a == depths_b:
         return None
     return ConfigDiff(
