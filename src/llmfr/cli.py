@@ -28,8 +28,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="llmfr",
         description=(
-            "LLM Flight Recorder. Milestone 1 can validate and print stored traces. "
-            "It does not record, replay, or compare generations."
+            "LLM Flight Recorder. Validate and print stored traces. "
+            "Record, replay, and compare commands are not available yet."
         ),
     )
     sub = parser.add_subparsers(dest="command", required=True)

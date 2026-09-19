@@ -1,3 +1,12 @@
+from llmfr.adapters import (
+    DEFAULT_HF_MODEL_ID,
+    PORTFOLIO_DEMO_MODEL_ID,
+    AdapterCapabilities,
+    HuggingFaceCausalLMAdapter,
+    HuggingFaceExtraMissingError,
+    ModelAdapter,
+    StepLogits,
+)
 from llmfr.cli import main
 from llmfr.core import (
     DEFAULT_TOP_K,
@@ -26,9 +35,16 @@ from llmfr.core import (
 from llmfr.storage import DuplicateTraceIdError, TraceIndexEntry, TracePathError, TraceStore
 
 __all__ = [
+    "DEFAULT_HF_MODEL_ID",
     "DEFAULT_TOP_K",
     "MAX_TOP_K",
+    "PORTFOLIO_DEMO_MODEL_ID",
     "SCHEMA_VERSION",
+    "AdapterCapabilities",
+    "HuggingFaceCausalLMAdapter",
+    "HuggingFaceExtraMissingError",
+    "ModelAdapter",
+    "StepLogits",
     "DuplicateTraceIdError",
     "TracePathError",
     "Environment",

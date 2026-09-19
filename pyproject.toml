@@ -28,6 +28,10 @@ dev = [
   "ruff>=0.6",
   "mypy>=1.11",
 ]
+hf = [
+  "torch>=2.2",
+  "transformers>=4.40",
+]
 
 [project.scripts]
 llmfr = "llmfr.cli:main"
@@ -38,6 +42,9 @@ Repository = "https://github.com/sivaratrisrinivas/llm-flight-recorder"
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
+markers = [
+  "slow: downloads or runs a real Hugging Face model",
+]
 
 [tool.ruff]
 line-length = 100
@@ -51,7 +58,9 @@ select = ["E", "F", "I", "UP", "B"]
 quote-style = "double"
 
 [tool.mypy]
-python_version = "3.11"
+# Match CI (Python 3.12). numpy>=2.5 stubs use PEP 695 `type` statements that
+# mypy rejects when python_version is 3.11, even on a 3.12 runtime.
+python_version = "3.12"
 mypy_path = "src"
 packages = ["llmfr"]
 strict = true
@@ -61,3 +70,14 @@ plugins = ["pydantic.mypy"]
 init_forbid_extra = true
 init_typed = true
 warn_required_dynamic_aliases = true
+
+[[tool.mypy.overrides]]
+module = [
+  "torch",
+  "torch.*",
+  "transformers",
+  "transformers.*",
+  "huggingface_hub",
+  "huggingface_hub.*",
+]
+ignore_missing_imports = true
