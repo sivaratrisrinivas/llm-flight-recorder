@@ -75,6 +75,10 @@ def test_logprob_only_score_split_is_not_raw_logit() -> None:
     assert first.classification == "probability distribution"
     assert "raw_logits" not in first.differences
     assert "probabilities" in first.differences
+    assert first.reason is not None
+    assert "captured scores" in first.reason
+    assert "captured logits" not in first.reason
+    assert "captured logits" not in (result.enabling_summary or "")
 
 
 def test_cli_replay_openai_trace_fail_closed(tmp_path: Path, capsys: CaptureFixture[str]) -> None:

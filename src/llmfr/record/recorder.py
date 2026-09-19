@@ -215,11 +215,9 @@ def _record_hosted(
     if not completion.steps:
         raise RuntimeError("hosted adapter returned no tokens; refusing to invent them")
 
-    store_topk = bool(
-        completion.logprobs_available and any(step.top_k for step in completion.steps)
-    )
+    has_real_scores = _hosted_has_real_scores(completion)
     stored_k = completion.capture_k if completion.capture_k is not None else capture_k
-    if store_topk:
+    if has_real_scores:
         logits = LogitsCapture(mode="topk", k=stored_k)
     else:
         reason = completion.unavailable_reason or (
@@ -241,7 +239,7 @@ def _record_hosted(
         sampled_prob = None
         if sampled_logprob is not None:
             sampled_prob = min(1.0, max(0.0, math.exp(sampled_logprob)))
-        top_k = [] if not store_topk else list(step.top_k)
+        top_k = [] if logits.mode == "none" else list(step.top_k)
         events.append(
             Event(
                 step=step_index,
@@ -250,7 +248,7 @@ def _record_hosted(
                 sampled_logit=None,
                 sampled_prob=sampled_prob,
                 sampled_logprob=sampled_logprob,
-                sampled_rank=None if not store_topk else step.rank,
+                sampled_rank=None if logits.mode == "none" else step.rank,
                 top_k=top_k,
                 full_history=history_ctx,
                 model_visible_context=history_ctx,
@@ -276,6 +274,17 @@ def _record_hosted(
         generation_config=effective_generation_config(generation),
         events=events,
     )
+
+
+def _hosted_has_real_scores(completion: HostedCompletion) -> bool:
+    """True when the API returned any real logprob or top-k row.
+
+    Per-token logprob with empty ``top_logprobs`` still counts. Re-tokenized
+    output with no scores does not.
+    """
+    if completion.logprobs_available:
+        return True
+    return any(step.logprob is not None or step.top_k for step in completion.steps)
 
 
 def _reject_unsupported(generation: GenerationConfig) -> None:

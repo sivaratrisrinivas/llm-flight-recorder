@@ -63,7 +63,32 @@ def test_record_openai_without_logprobs_is_mode_none() -> None:
     assert "invent" in trace.run_metadata.logits.unavailable_reason
     assert all(not event.top_k for event in trace.events)
     assert all(event.sampled_logit is None for event in trace.events)
+    assert all(event.sampled_logprob is None for event in trace.events)
+    assert all(event.sampled_prob is None for event in trace.events)
     assert trace.events
+
+
+def test_record_openai_sampled_logprob_without_top_logprobs_is_topk() -> None:
+    """Per-token logprob with empty top_logprobs is still real scores, not mode=none."""
+    tokens = (
+        ("He", -0.1, []),
+        ("llo", -0.2, []),
+    )
+    client = FakeOpenAIClient([make_chat_response(tokens)])
+    trace = record_generation(
+        _adapter(client),
+        "Hi",
+        generation=GenerationConfig(max_new_tokens=2, do_sample=False),
+        capture_k=3,
+    )
+    assert trace.run_metadata.logits.mode == "topk"
+    assert trace.run_metadata.logits.k == 3
+    assert trace.run_metadata.logits.unavailable_reason is None
+    assert all(event.sampled_logprob is not None for event in trace.events)
+    assert [event.sampled_logprob for event in trace.events] == [-0.1, -0.2]
+    assert all(event.sampled_prob is not None for event in trace.events)
+    assert all(not event.top_k for event in trace.events)
+    assert all(event.sampled_logit is None for event in trace.events)
 
 
 def test_record_openai_redact_and_no_persist(tmp_path: Path) -> None:

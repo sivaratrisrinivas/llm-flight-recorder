@@ -146,6 +146,16 @@ def _logit_fields_differ(event_a: Event, event_b: Event) -> bool:
     return False
 
 
+def _event_has_logit_float(event: Event) -> bool:
+    if event.sampled_logit is not None:
+        return True
+    return any(candidate.logit is not None for candidate in event.top_k)
+
+
+def _both_lack_logit_floats(event_a: Event, event_b: Event) -> bool:
+    return not _event_has_logit_float(event_a) and not _event_has_logit_float(event_b)
+
+
 def _prob_fields_differ(event_a: Event, event_b: Event) -> bool:
     overlap = min(len(event_a.top_k), len(event_b.top_k))
     for cand_a, cand_b in zip(event_a.top_k[:overlap], event_b.top_k[:overlap], strict=True):
@@ -241,9 +251,10 @@ def _classify_first(
         )
 
     if "probabilities" in differences:
+        score_word = "scores" if _both_lack_logit_floats(event_a, event_b) else "logits"
         return (
             "probability distribution",
-            "captured logits and decoding config match; stored probabilities differ",
+            f"captured {score_word} and decoding config match; stored probabilities differ",
         )
 
     if "sampled_token" in differences:
@@ -604,7 +615,7 @@ def _enabling_summary(
         return "no recorded sampler config field explains the first split"
     if classification == "probability distribution":
         return (
-            "captured logits and decoding config match; "
+            "captured scores and decoding config match; "
             "stored probabilities differ without a named config cause"
         )
     if classification == "sampling":

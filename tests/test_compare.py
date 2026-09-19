@@ -278,6 +278,8 @@ def test_probability_distribution_when_logits_match() -> None:
     assert first.classification == "probability distribution"
     assert "probabilities" in first.differences
     assert "raw_logits" not in first.differences
+    assert first.reason is not None
+    assert first.reason.startswith("captured logits and decoding config match")
 
 
 def test_hosted_api_without_logits_is_unknown_runtime() -> None:
