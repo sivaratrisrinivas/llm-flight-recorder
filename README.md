@@ -26,7 +26,8 @@ a stable `trace_id`. No Kafka, Kubernetes, Redis, or Postgres. No LangChain.
 - Round-trip serialize/deserialize tests (Case G)
 - ADRs for the v1 schema and storage choices
 
-Inspect CLI: `llmfr version`, `validate`, and `topk`.
+Inspect CLI: `llmfr version`, `validate`, and `topk` (file traces). Milestone 7
+adds `llmfr inspect` for store ids and `--step` views.
 
 ## Milestone 2 (done)
 
@@ -50,9 +51,7 @@ Inspect CLI: `llmfr version`, `validate`, and `topk`.
 - `supports_seed=True` on the HF adapter. Seed drives an isolated
   `random.Random` in the recorder, not `torch.manual_seed` (see
   `docs/adr/0004-recorder-loop.md`)
-- Minimal `llmfr record` that writes a store and prints `trace_id`
-
-Not in M3: replay, compare, or a polished record CLI.
+- `llmfr record` writes a store and prints `trace_id`
 
 ## Milestone 4 (done)
 
@@ -66,7 +65,7 @@ Not in M3: replay, compare, or a polished record CLI.
   flags for token match vs bit-identical logits
 - ADR for what cannot be bit-identical across GPU/CPU/PyTorch/kernels
   (`docs/adr/0005-deterministic-replay.md`)
-- Minimal `llmfr replay TRACE_ID` against the existing TraceStore layout
+- `llmfr replay TRACE_ID` against the existing TraceStore layout
 
 ## Milestone 5 (done)
 
@@ -84,7 +83,7 @@ Not in M3: replay, compare, or a polished record CLI.
 - Core classification tests use stored traces and the fake adapter. They
   do not invent logits for hosted `logits.mode=none` traces
 
-## Milestone 6 (done on this branch)
+## Milestone 6 (done)
 
 - Compare report names root cause vs downstream effects in a fixed
   section order: CONFIG DIFFERENCE, EXECUTION (where paths still match),
@@ -98,11 +97,81 @@ Not in M3: replay, compare, or a polished record CLI.
 - Extends `llmfr compare` formatting and `CompareResult` fields
   (`matched_prefix_steps`, `likely_enabling_config`). No new command
 
-Not in M6: polished CLI UX (M7) or a compare UI (M9).
+## Milestone 7 (done on this branch)
+
+- Production Typer CLI: `llmfr record`, `llmfr replay`, `llmfr compare`,
+  and `llmfr inspect --step N`
+- `inspect` shows history vs visible context, sampled token, and top-k
+  for one recorded step. `validate` and `topk` still work on trace files
+- `--help` documents commands and exit codes. Expected failures print
+  `error:` without a traceback
+- Happy path: record twice (or load two traces), inspect a step, compare.
+  See [Definition of Done](#definition-of-done) below
+
+## Commands
+
+| Command | What it does |
+| --- | --- |
+| `llmfr record PROMPT` | Record a generation into `--store` and print `trace_id` |
+| `llmfr replay TRACE_ID` | Replay from TraceStore; JSON `ReplayResult` |
+| `llmfr compare A B` | First divergence vs downstream effects (files or ids) |
+| `llmfr inspect TRACE --step N` | One step: history vs visible context, top-k, sampled token |
+| `llmfr validate PATH` | Load a JSON/JSONL file and confirm the v1 schema |
+| `llmfr topk PATH` | Full-trace top-k dump for a JSON/JSONL file |
+| `llmfr version` | Package and schema versions |
+
+`llmfr --help` and `llmfr COMMAND --help` describe flags. Store commands
+default to `--store .llmfr`. Compare and inspect accept a file path or a
+`trace_id`. Replay takes a store id only.
+
+## Exit codes
+
+| Code | Meaning |
+| --- | --- |
+| 0 | Success. `compare`: traces identical. `replay`: status `reproduced`. |
+| 1 | Expected failure: missing or invalid input, unknown `trace_id`, out-of-range `--step`, compare diverged, replay not reproduced. |
+| 2 | Usage error: unknown command or invalid options. |
+
+Expected failures write `error: ...` to stderr and do not print a traceback.
+
+## Definition of Done
+
+Record two traces, inspect a step, then compare. Needs the `hf` extra and a
+CPU torch wheel (see install below). `--greedy` keeps the two records on the
+same argmax path so compare can exit 0.
+
+```bash
+A=$(llmfr record "Hello" --store .llmfr --max-new-tokens 8 --greedy)
+B=$(llmfr record "Hello" --store .llmfr --max-new-tokens 8 --greedy)
+llmfr inspect "$A" --store .llmfr --step 0
+llmfr compare "$A" "$B" --store .llmfr
+```
+
+Different seeds are the split case. Compare then exits 1 and names sampling
+when the first sampled token differs:
+
+```bash
+A=$(llmfr record "Hello" --store .llmfr --max-new-tokens 8 --seed 1)
+B=$(llmfr record "Hello" --store .llmfr --max-new-tokens 8 --seed 2)
+llmfr compare "$A" "$B" --store .llmfr
+```
+
+File traces work the same way:
+
+```bash
+llmfr compare path/a.jsonl path/b.jsonl
+llmfr inspect path/a.jsonl --step 0
+```
+
+Replay a stored id (JSON `ReplayResult`; exit 0 only when reproduced):
+
+```bash
+llmfr replay "$A" --store .llmfr
+```
 
 ## Install and test
 
-Core (schema, storage, inspect CLI, recorder unit tests with a fake adapter):
+Core (schema, storage, CLI, recorder unit tests with a fake adapter):
 
 ```bash
 pip install -e ".[dev]"
@@ -132,16 +201,6 @@ pytest tests/test_recorder_hf.py tests/test_replay_hf.py tests/test_huggingface_
 `tests/test_replay_hf.py` are marked `slow` and are skipped unless `torch`
 and `transformers` are installed. They do not stub logits.
 
-Minimal record, replay, then compare (prints `trace_id`, a JSON
-`ReplayResult`, then a first-divergence report):
-
-```bash
-llmfr record "Hello" --store .llmfr --max-new-tokens 8 --greedy
-llmfr replay TRACE_ID --store .llmfr
-llmfr compare TRACE_A TRACE_B --store .llmfr
-llmfr compare path/a.jsonl path/b.jsonl
-```
-
 ## Roadmap
 
 - [x] **M1** Schema and storage
@@ -149,11 +208,12 @@ llmfr compare path/a.jsonl path/b.jsonl
 - [x] **M3** Recorder loop
 - [x] **M4** Replay
 - [x] **M5** Compare / first-divergence
-- [x] **M6** Downstream-effects / root-cause narrative (this branch)
-- [ ] **M7** Polished CLI UX
+- [x] **M6** Downstream-effects / root-cause narrative
+- [x] **M7** Polished CLI UX (this branch)
 
 Design notes: `docs/adr/0001-v1-trace-schema.md`, `docs/adr/0002-v1-storage.md`,
 `docs/adr/0003-hf-adapter-default-model.md`, `docs/adr/0004-recorder-loop.md`,
 `docs/adr/0005-deterministic-replay.md`,
-`docs/adr/0006-first-divergence-compare.md`, and
-`docs/adr/0007-root-cause-report.md`.
+`docs/adr/0006-first-divergence-compare.md`,
+`docs/adr/0007-root-cause-report.md`, and
+`docs/adr/0008-production-cli.md`.
