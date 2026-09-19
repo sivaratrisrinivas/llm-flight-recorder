@@ -526,16 +526,28 @@ def _enabling_summary(
         return None
     classification = first.classification
     if classification == "prompt/history":
-        return "prompt or history difference likely enabled this first split"
+        if enabling:
+            return "prompt or history difference likely enabled this first split"
+        return (
+            "full_history differs; no recorded prompt or prompt_token_ids field "
+            "explains the first split"
+        )
     if classification == "tokenizer":
-        return "tokenizer or prompt_token_ids difference likely enabled this first split"
+        if enabling:
+            return "tokenizer or prompt_token_ids difference likely enabled this first split"
+        return (
+            "decoded text differs; no recorded tokenizer or prompt_token_ids field "
+            "explains the first split"
+        )
     if classification == "model-visible context":
         return (
             "model-visible window or truncation differs; "
             "no generation_config field records the visible limit"
         )
     if classification == "model/version":
-        return "model id or revision difference likely enabled this first split"
+        if enabling:
+            return "model id or revision difference likely enabled this first split"
+        return "no recorded model id or revision field explains the first split"
     if classification == "raw-logit":
         if enabling:
             return "environment or dtype difference likely enabled this raw-logit split"
@@ -544,7 +556,9 @@ def _enabling_summary(
             "no recorded config field explains the first split"
         )
     if classification == "decoding config":
-        return "sampler settings likely enabled this first split"
+        if enabling:
+            return "sampler settings likely enabled this first split"
+        return "no recorded sampler config field explains the first split"
     if classification == "probability distribution":
         return (
             "captured logits and decoding config match; "
@@ -553,7 +567,9 @@ def _enabling_summary(
     if classification == "sampling":
         if any(diff.field == "generation_config.seed" for diff in enabling):
             return "seed difference likely enabled this sampling split"
-        return "sampler draw differs; listed config diffs likely enabled this first split"
+        if enabling:
+            return "listed config diffs likely enabled this sampling split"
+        return "no recorded seed or sampler config field explains this sampler draw"
     if any("logits" in diff.field for diff in enabling):
         return (
             "logits were not comparable; stored fields cannot name a logit cause "

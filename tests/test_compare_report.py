@@ -5,15 +5,19 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
 from pytest import CaptureFixture
 
 from llmfr.cli import run
 from llmfr.compare import (
     DOWNSTREAM_NOT_ROOT_CAUSE,
     REPORT_SECTIONS,
+    CompareResult,
     compare_traces,
     format_compare_result,
 )
+from llmfr.compare.compare import _enabling_summary
+from llmfr.compare.result import DivergenceClass, FirstDivergence
 from llmfr.core.schema import dumps_json
 from tests.factories import TRACE_ID_B, make_trace
 from tests.test_compare import _seeded_pair, _shift_event_logits
@@ -164,6 +168,97 @@ def test_execution_describes_matching_prefix_before_length_split() -> None:
     assert "recorded length: 2 vs 1 steps" in exec_block
     assert "same steps: 0" in exec_block
     assert "Steps 2+: downstream effects" in report
+
+
+def _assert_empty_enabling_is_honest(result: CompareResult) -> None:
+    assert result.likely_enabling_config == ()
+    assert result.enabling_summary is not None
+    assert "likely enabled" not in result.enabling_summary
+    assert "listed config diffs" not in result.enabling_summary
+    assert "no recorded" in result.enabling_summary
+    report = format_compare_result(result)
+    enabling_block = report[report.index("LIKELY ENABLING CONFIG") :]
+    assert "(none recorded)" in enabling_block
+    assert result.enabling_summary in enabling_block
+
+
+def test_sampling_without_seed_diff_empty_enabling_is_honest() -> None:
+    trace_a = make_trace()
+    event0 = trace_a.events[0].model_copy(
+        update={"sampled_token_id": 202, "sampled_token": "alt2", "sampled_rank": 2}
+    )
+    trace_b = make_trace(trace_id=TRACE_ID_B).model_copy(
+        update={"events": [event0, make_trace().events[1]]}
+    )
+    result = compare_traces(trace_a, trace_b)
+    first = result.first_divergence
+    assert first is not None
+    assert first.classification == "sampling"
+    _assert_empty_enabling_is_honest(result)
+    assert "sampler draw" in (result.enabling_summary or "")
+
+
+def test_tokenizer_decode_string_only_empty_enabling_is_honest() -> None:
+    trace_a = make_trace()
+    event0 = trace_a.events[0].model_copy(update={"sampled_token": "HELLO"})
+    trace_b = make_trace(trace_id=TRACE_ID_B).model_copy(
+        update={"events": [event0, make_trace().events[1]]}
+    )
+    result = compare_traces(trace_a, trace_b)
+    first = result.first_divergence
+    assert first is not None
+    assert first.classification == "tokenizer"
+    _assert_empty_enabling_is_honest(result)
+
+
+def test_hand_edited_history_empty_enabling_is_honest() -> None:
+    trace_a = make_trace()
+    event0 = trace_a.events[0]
+    new_ids = [9, 8, 7]
+    rewritten = event0.model_copy(
+        update={
+            "full_history": event0.full_history.model_copy(update={"token_ids": new_ids}),
+            "model_visible_context": event0.model_visible_context.model_copy(
+                update={"token_ids": new_ids}
+            ),
+        }
+    )
+    trace_b = make_trace(trace_id=TRACE_ID_B).model_copy(
+        update={"events": [rewritten, trace_a.events[1]]}
+    )
+    result = compare_traces(trace_a, trace_b)
+    first = result.first_divergence
+    assert first is not None
+    assert first.classification == "prompt/history"
+    assert result.config_diffs == ()
+    _assert_empty_enabling_is_honest(result)
+
+
+@pytest.mark.parametrize(
+    "classification",
+    (
+        "prompt/history",
+        "tokenizer",
+        "model/version",
+        "decoding config",
+        "sampling",
+        "raw-logit",
+    ),
+)
+def test_empty_enabling_summary_does_not_claim_config_cause(
+    classification: DivergenceClass,
+) -> None:
+    first = FirstDivergence(
+        step=0,
+        classification=classification,
+        differences=("sampled_token",),
+        reason="test",
+    )
+    summary = _enabling_summary(first, ())
+    assert summary is not None
+    assert "likely enabled" not in summary
+    assert "listed config diffs" not in summary
+    assert "no recorded" in summary
 
 
 def test_json_compare_includes_m6_fields(tmp_path: Path, capsys: CaptureFixture[str]) -> None:
