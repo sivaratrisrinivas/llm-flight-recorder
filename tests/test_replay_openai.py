@@ -142,6 +142,10 @@ def test_cli_inspect_openai_trace(tmp_path: Path, capsys: CaptureFixture[str]) -
     assert "sampled token" in out
     assert "top-k" in out
     assert "logprob" in out
+    assert run(["topk", str(path)]) == 0
+    topk_out = capsys.readouterr().out
+    assert "openai top_logprobs are not full-vocab raw logits" in topk_out
+    assert "replay is not bit-identical" in topk_out
     assert run(["compare", str(path), str(path)]) == 0
     compare_out = capsys.readouterr().out
     assert "identical" in compare_out

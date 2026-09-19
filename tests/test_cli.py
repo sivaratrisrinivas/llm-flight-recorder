@@ -275,6 +275,10 @@ def test_cli_record_replay_compare_help(capsys: CaptureFixture[str]) -> None:
     assert "--api-key" not in record_help
     assert "OPENAI_API_KEY" in record_help
     assert "API-key flag" in record_help
+    assert "--seed" in record_help
+    assert "LocalRNG" in record_help
+    assert "Hugging Face" in record_help
+    assert "API request field" in record_help
 
 
 def test_cli_record_twice_then_compare_identical(

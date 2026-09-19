@@ -192,7 +192,13 @@ def record(
     ] = 8,
     seed: Annotated[
         int | None,
-        typer.Option("--seed", help="Recorder LocalRNG seed. Isolated from torch."),
+        typer.Option(
+            "--seed",
+            help=(
+                "Hugging Face: LocalRNG seed, isolated from torch. "
+                "OpenAI: API request field only; not LocalRNG."
+            ),
+        ),
     ] = None,
     temperature: Annotated[
         float,

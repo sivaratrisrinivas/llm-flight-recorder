@@ -81,3 +81,15 @@ def test_inspect_overview_openai_does_not_claim_raw_logits() -> None:
     assert "openai top_logprobs are not full-vocab raw logits" in text
     assert "replay is not bit-identical" in text
     assert "gpt-4o-mini" in text
+
+
+def test_format_trace_topk_openai_does_not_claim_raw_logits() -> None:
+    from tests.openai_fakes import make_openai_trace
+
+    text = format_trace_topk(make_openai_trace())
+    assert "openai top_logprobs are not full-vocab raw logits" in text
+    assert "replay is not bit-identical" in text
+    assert "logits top-k" in text
+    hf = format_trace_topk(make_trace(k=3))
+    assert "openai top_logprobs" not in hf
+    assert "logits top-k (k=3)" in hf

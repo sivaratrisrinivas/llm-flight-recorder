@@ -6,6 +6,10 @@ from typing import Any
 
 from llmfr.core.schema import Event, TokenContext, Trace
 
+_OPENAI_TOPK_CAVEAT = (
+    "openai top_logprobs are not full-vocab raw logits; replay is not bit-identical"
+)
+
 
 def format_event_topk(event: Event) -> str:
     sampled = f"step {event.step}  sampled {event.sampled_token!r} (id={event.sampled_token_id})"
@@ -42,6 +46,8 @@ def format_trace_topk(trace: Trace) -> str:
         header.append(f"logits unavailable: {meta.logits.unavailable_reason}")
         return "\n".join(header) + "\n"
     header.append(f"logits top-k (k={meta.logits.k})")
+    if trace.model.provider == "openai":
+        header.append(_OPENAI_TOPK_CAVEAT)
     body = [format_event_topk(event) for event in trace.events]
     return "\n".join(header + [""] + body) + "\n"
 
@@ -75,9 +81,7 @@ def format_inspect_overview(trace: Trace) -> str:
     else:
         lines.append(f"logits top-k (k={logits.k})")
     if model.provider == "openai":
-        lines.append(
-            "openai top_logprobs are not full-vocab raw logits; replay is not bit-identical"
-        )
+        lines.append(_OPENAI_TOPK_CAVEAT)
     lines.append(f"prompt {meta.prompt!r}")
     lines.append(f"output {meta.output_text!r}")
     lines.append(f"events {len(trace.events)}")
