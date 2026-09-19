@@ -26,6 +26,7 @@ ADR_LINKS = (
     "docs/adr/0006-first-divergence-compare.md",
     "docs/adr/0007-root-cause-report.md",
     "docs/adr/0008-production-cli.md",
+    "docs/adr/0009-openai-adapter.md",
 )
 
 

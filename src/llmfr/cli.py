@@ -21,6 +21,15 @@ from llmfr.adapters.huggingface import (
     HuggingFaceCausalLMAdapter,
     HuggingFaceExtraMissingError,
 )
+from llmfr.adapters.openai import (
+    DEFAULT_OPENAI_MODEL,
+    OPENAI_KEY_ENV,
+    OpenAIAPIKeyMissingError,
+    OpenAIChatAdapter,
+    OpenAIExtraMissingError,
+    openai_model_name,
+    resolve_record_provider,
+)
 from llmfr.compare import CompareResult, compare_traces, format_compare_result
 from llmfr.core.format import (
     format_inspect_overview,
@@ -63,6 +72,8 @@ _RECORD_ERRORS = (
     ValidationError,
     RuntimeError,
     HuggingFaceExtraMissingError,
+    OpenAIExtraMissingError,
+    OpenAIAPIKeyMissingError,
 )
 
 app = typer.Typer(
@@ -193,7 +204,21 @@ def record(
         str | None,
         typer.Option(
             "--model",
-            help="Hugging Face model id (default: sshleifer/tiny-gpt2).",
+            help=(
+                "Hugging Face model id (default: sshleifer/tiny-gpt2) or OpenAI "
+                "model name (gpt-4o-mini, or openai:gpt-4o-mini)."
+            ),
+        ),
+    ] = None,
+    provider: Annotated[
+        str | None,
+        typer.Option(
+            "--provider",
+            help=(
+                "Backend: huggingface (default, local/CI) or openai. OpenAI also "
+                f"selected when --model looks like an API name. Reads {OPENAI_KEY_ENV} "
+                "from the environment; there is no API-key flag."
+            ),
         ),
     ] = None,
     capture_k: Annotated[
@@ -232,7 +257,8 @@ def record(
     """Record a short generation into TraceStore and print trace_id.
 
     Exit 0 prints the new trace_id on stdout. Exit 1 for expected failures
-    (missing Hugging Face extra, invalid config, I/O). Does not invent logits.
+    (missing Hugging Face extra, missing OPENAI_API_KEY, invalid config, I/O).
+    Does not invent logits. Does not accept an API key flag.
     """
     raise typer.Exit(
         _cmd_record(
@@ -243,6 +269,7 @@ def record(
             temperature=temperature,
             greedy=greedy,
             model=model,
+            provider=provider,
             capture_k=capture_k,
             max_visible_tokens=max_visible_tokens,
             fmt=fmt,
@@ -342,6 +369,7 @@ def _cmd_record(
     temperature: float,
     greedy: bool,
     model: str | None,
+    provider: str | None,
     capture_k: int,
     max_visible_tokens: int | None,
     fmt: Literal["json", "jsonl"],
@@ -349,9 +377,11 @@ def _cmd_record(
     redact: bool,
 ) -> int:
     try:
-        adapter = _build_hf_adapter(
+        adapter = _build_record_adapter(
             model_id=model,
+            provider=provider,
             max_visible_tokens=max_visible_tokens,
+            capture_k=capture_k,
         )
         generation = GenerationConfig(
             temperature=temperature,
@@ -475,6 +505,26 @@ def _compare(trace_a: Trace, trace_b: Trace) -> CompareResult:
     return compare_traces(trace_a, trace_b)
 
 
+def _build_record_adapter(
+    *,
+    model_id: str | None,
+    provider: str | None,
+    max_visible_tokens: int | None,
+    capture_k: int,
+) -> HuggingFaceCausalLMAdapter | OpenAIChatAdapter:
+    backend = resolve_record_provider(provider, model_id)
+    if backend == "openai":
+        return _build_openai_adapter(
+            model_id=model_id,
+            max_visible_tokens=max_visible_tokens,
+            capture_k=capture_k,
+        )
+    return _build_hf_adapter(
+        model_id=model_id,
+        max_visible_tokens=max_visible_tokens,
+    )
+
+
 def _build_hf_adapter(
     *,
     model_id: str | None,
@@ -485,6 +535,21 @@ def _build_hf_adapter(
         device="cpu",
         max_visible_tokens=max_visible_tokens,
     )
+
+
+def _build_openai_adapter(
+    *,
+    model_id: str | None,
+    max_visible_tokens: int | None,
+    capture_k: int,
+) -> OpenAIChatAdapter:
+    if max_visible_tokens is not None:
+        raise ValueError(
+            "OpenAI adapter does not implement a local left-window; "
+            "omit --max-visible-tokens (the API owns context length)"
+        )
+    name = DEFAULT_OPENAI_MODEL if model_id is None else openai_model_name(model_id)
+    return OpenAIChatAdapter(name, top_logprobs=capture_k)
 
 
 def _load_trace(path: str) -> Trace | int:

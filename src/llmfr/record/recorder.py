@@ -15,7 +15,7 @@ import math
 from collections.abc import Sequence
 from typing import Protocol, runtime_checkable
 
-from llmfr.adapters.base import AdapterCapabilities, StepLogits
+from llmfr.adapters.base import AdapterCapabilities, HostedCompletion, StepLogits
 from llmfr.core.schema import (
     Environment,
     Event,
@@ -89,16 +89,50 @@ def record_generation(
     ``redact`` runs after the Trace is built and before any write.
     """
     _reject_unsupported(generation)
-    if not adapter.capabilities.supports_logits:
-        raise ValueError("recorder requires real next-token logits; refusing to invent them")
-    if generation.seed is not None and not adapter.capabilities.supports_seed:
-        raise ValueError("adapter does not support seed; refusing to pretend that it does")
     if capture_k < 1 or capture_k > MAX_TOP_K:
         raise ValueError(f"capture_k must be in 1..{MAX_TOP_K}")
     max_new = generation.max_new_tokens
     if max_new is None or max_new < 1:
         raise ValueError("max_new_tokens must be >= 1")
+    if adapter.capabilities.supports_logits:
+        if generation.seed is not None and not adapter.capabilities.supports_seed:
+            raise ValueError("adapter does not support seed; refusing to pretend that it does")
+        trace = _record_local(
+            adapter,
+            prompt,
+            generation=generation,
+            capture_k=capture_k,
+            source=source,
+            tags=tags,
+        )
+    else:
+        complete = getattr(adapter, "complete_prompt", None)
+        if not callable(complete):
+            raise ValueError("recorder requires real next-token logits; refusing to invent them")
+        trace = _record_hosted(
+            adapter,
+            prompt,
+            generation=generation,
+            capture_k=capture_k,
+            source=source,
+            tags=tags,
+        )
+    if redact is not None:
+        trace = redact(trace)
+    if persist and store is not None:
+        store.put(trace, fmt=fmt)
+    return trace
 
+
+def _record_local(
+    adapter: RecordableAdapter,
+    prompt: str,
+    *,
+    generation: GenerationConfig,
+    capture_k: int,
+    source: str | None,
+    tags: dict[str, str] | None,
+) -> Trace:
     prompt_ids = adapter.encode(prompt)
     if not prompt_ids:
         raise ValueError("prompt encoded to no tokens")
@@ -108,6 +142,8 @@ def record_generation(
     history = list(prompt_ids)
     sampled_ids: list[int] = []
     events: list[Event] = []
+    max_new = generation.max_new_tokens
+    assert max_new is not None
 
     for step_index in range(max_new):
         step_logits = adapter.next_token_logits(history)
@@ -142,7 +178,7 @@ def record_generation(
         if _hit_stop(adapter.decode(sampled_ids), generation.stop):
             break
 
-    trace = Trace(
+    return Trace(
         schema_version=SCHEMA_VERSION,
         run_metadata=RunMetadata(
             prompt=prompt,
@@ -157,11 +193,89 @@ def record_generation(
         generation_config=effective_generation_config(generation),
         events=events,
     )
-    if redact is not None:
-        trace = redact(trace)
-    if persist and store is not None:
-        store.put(trace, fmt=fmt)
-    return trace
+
+
+def _record_hosted(
+    adapter: RecordableAdapter,
+    prompt: str,
+    *,
+    generation: GenerationConfig,
+    capture_k: int,
+    source: str | None,
+    tags: dict[str, str] | None,
+) -> Trace:
+    """Record API-sampled tokens. Never run LocalRNG over invented logits."""
+    complete = getattr(adapter, "complete_prompt", None)
+    if not callable(complete):
+        raise ValueError("recorder requires real next-token logits; refusing to invent them")
+    completion: HostedCompletion = complete(prompt, generation=generation, capture_k=capture_k)
+    prompt_ids = list(completion.prompt_token_ids)
+    if not prompt_ids:
+        raise ValueError("prompt encoded to no tokens")
+    if not completion.steps:
+        raise RuntimeError("hosted adapter returned no tokens; refusing to invent them")
+
+    store_topk = bool(
+        completion.logprobs_available and any(step.top_k for step in completion.steps)
+    )
+    stored_k = completion.capture_k if completion.capture_k is not None else capture_k
+    if store_topk:
+        logits = LogitsCapture(mode="topk", k=stored_k)
+    else:
+        reason = completion.unavailable_reason or (
+            "hosted API did not expose real logprobs; refusing to invent them"
+        )
+        logits = LogitsCapture(mode="none", unavailable_reason=reason)
+
+    history_ids = list(prompt_ids)
+    history_text = prompt
+    events: list[Event] = []
+    sampled_tokens: list[str] = []
+    for step_index, step in enumerate(completion.steps):
+        history_ctx = TokenContext(
+            token_ids=list(history_ids),
+            text=history_text,
+            truncated=False,
+        )
+        sampled_logprob = None if step.logprob is None else float(step.logprob)
+        sampled_prob = None
+        if sampled_logprob is not None:
+            sampled_prob = min(1.0, max(0.0, math.exp(sampled_logprob)))
+        top_k = [] if not store_topk else list(step.top_k)
+        events.append(
+            Event(
+                step=step_index,
+                sampled_token_id=step.token_id,
+                sampled_token=step.token,
+                sampled_logit=None,
+                sampled_prob=sampled_prob,
+                sampled_logprob=sampled_logprob,
+                sampled_rank=None if not store_topk else step.rank,
+                top_k=top_k,
+                full_history=history_ctx,
+                model_visible_context=history_ctx,
+            )
+        )
+        sampled_tokens.append(step.token)
+        history_ids.append(step.token_id)
+        history_text = history_text + step.token
+
+    output_text = completion.output_text if completion.output_text else "".join(sampled_tokens)
+    return Trace(
+        schema_version=SCHEMA_VERSION,
+        run_metadata=RunMetadata(
+            prompt=prompt,
+            prompt_token_ids=prompt_ids,
+            output_text=output_text,
+            source=source,
+            tags={} if tags is None else dict(tags),
+            logits=logits,
+        ),
+        environment=adapter.environment(),
+        model=adapter.model_config,
+        generation_config=effective_generation_config(generation),
+        events=events,
+    )
 
 
 def _reject_unsupported(generation: GenerationConfig) -> None:

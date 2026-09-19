@@ -37,7 +37,9 @@ out of scope. Help must not invite pasting secrets.
    Record still writes a store and prints `trace_id`.
 
 5. **No invented logits.** Inspect reports `logits.mode=none` honestly.
-   No API-key flags.
+   No API-key flags. OpenAI recording reads `OPENAI_API_KEY` from the
+   environment when `--provider openai` (or an OpenAI-shaped `--model`) is
+   selected. Hugging Face stays the default for local/CI.
 
 ## Consequences
 

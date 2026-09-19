@@ -72,3 +72,12 @@ def test_inspect_step_empty_topk_is_honest() -> None:
     text = format_inspect_step(stripped, 0)
     assert "(no top-k logits)" in text
     assert "invent" not in text
+
+
+def test_inspect_overview_openai_does_not_claim_raw_logits() -> None:
+    from tests.openai_fakes import make_openai_trace
+
+    text = format_inspect_overview(make_openai_trace())
+    assert "openai top_logprobs are not full-vocab raw logits" in text
+    assert "replay is not bit-identical" in text
+    assert "gpt-4o-mini" in text

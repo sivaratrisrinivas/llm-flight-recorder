@@ -133,11 +133,15 @@ def _event_differences(event_a: Event | None, event_b: Event | None) -> list[str
 def _logit_fields_differ(event_a: Event, event_b: Event) -> bool:
     overlap = min(len(event_a.top_k), len(event_b.top_k))
     for cand_a, cand_b in zip(event_a.top_k[:overlap], event_b.top_k[:overlap], strict=True):
+        if cand_a.logit is None and cand_b.logit is None:
+            continue
         if cand_a.token_id != cand_b.token_id:
             return True
         if cand_a.logit != cand_b.logit:
             return True
     if event_a.sampled_token_id == event_b.sampled_token_id:
+        if event_a.sampled_logit is None and event_b.sampled_logit is None:
+            return False
         return event_a.sampled_logit != event_b.sampled_logit
     return False
 
@@ -145,6 +149,8 @@ def _logit_fields_differ(event_a: Event, event_b: Event) -> bool:
 def _prob_fields_differ(event_a: Event, event_b: Event) -> bool:
     overlap = min(len(event_a.top_k), len(event_b.top_k))
     for cand_a, cand_b in zip(event_a.top_k[:overlap], event_b.top_k[:overlap], strict=True):
+        if cand_a.token_id != cand_b.token_id and cand_a.logit is None and cand_b.logit is None:
+            return True
         if cand_a.prob != cand_b.prob:
             return True
         if cand_a.logprob != cand_b.logprob:

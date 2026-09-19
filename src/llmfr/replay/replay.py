@@ -316,6 +316,12 @@ def _blocked(
 def _not_replayable_reason(trace: Trace, adapter: RecordableAdapter | None) -> str | None:
     if not trace.events:
         return "trace has no events to replay"
+    if trace.model.provider == "openai":
+        return (
+            "openai traces are not_replayable: the API returns at most top_logprobs, "
+            "not full-vocab raw logits, and hosted sampling is not bit-identical "
+            "replay against a pinned HF CPU checkpoint"
+        )
     logits = trace.run_metadata.logits
     if logits.mode == "none":
         return "trace stored logits.mode=none; cannot replay a sampling path without real logits"

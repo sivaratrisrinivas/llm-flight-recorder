@@ -74,6 +74,10 @@ def format_inspect_overview(trace: Trace) -> str:
         lines.append(f"logits unavailable: {logits.unavailable_reason}")
     else:
         lines.append(f"logits top-k (k={logits.k})")
+    if model.provider == "openai":
+        lines.append(
+            "openai top_logprobs are not full-vocab raw logits; replay is not bit-identical"
+        )
     lines.append(f"prompt {meta.prompt!r}")
     lines.append(f"output {meta.output_text!r}")
     lines.append(f"events {len(trace.events)}")

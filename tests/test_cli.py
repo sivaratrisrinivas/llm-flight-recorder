@@ -271,6 +271,10 @@ def test_cli_record_replay_compare_help(capsys: CaptureFixture[str]) -> None:
 
     assert "--no-persist" in record_help
     assert "--redact" in record_help
+    assert "--provider" in record_help
+    assert "--api-key" not in record_help
+    assert "OPENAI_API_KEY" in record_help
+    assert "API-key flag" in record_help
 
 
 def test_cli_record_twice_then_compare_identical(
@@ -399,3 +403,106 @@ def test_cli_validate_partial_jsonl(tmp_path: Path, capsys: CaptureFixture[str])
     assert "error:" in err
     assert "corrupt or partial" in err
     assert "Traceback" not in err
+
+
+def test_cli_record_openai_mocked(
+    tmp_path: Path, capsys: CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from llmfr.adapters.openai import OpenAIChatAdapter
+    from tests.openai_fakes import (
+        FakeEncoding,
+        FakeOpenAIClient,
+        hello_logprob_tokens,
+        make_chat_response,
+    )
+
+    client = FakeOpenAIClient([make_chat_response(hello_logprob_tokens())])
+    monkeypatch.setattr(
+        "llmfr.cli._build_openai_adapter",
+        lambda **_kwargs: OpenAIChatAdapter("gpt-4o-mini", client=client, encoding=FakeEncoding()),
+    )
+    code = run(
+        [
+            "record",
+            "Hi",
+            "--provider",
+            "openai",
+            "--store",
+            str(tmp_path),
+            "--max-new-tokens",
+            "2",
+            "--greedy",
+        ]
+    )
+    assert code == 0
+    trace_id = capsys.readouterr().out.strip()
+    loaded = TraceStore(tmp_path).get(trace_id)
+    assert loaded.model.provider == "openai"
+    assert loaded.run_metadata.logits.mode == "topk"
+    assert all(event.sampled_logit is None for event in loaded.events)
+    assert all(candidate.logit is None for event in loaded.events for candidate in event.top_k)
+    assert run(["inspect", trace_id, "--store", str(tmp_path), "--step", "0"]) == 0
+    inspect_out = capsys.readouterr().out
+    assert "logprob" in inspect_out
+    assert "top-k" in inspect_out
+
+
+def test_cli_record_openai_model_name_selects_backend(
+    tmp_path: Path, capsys: CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from llmfr.adapters.openai import OpenAIChatAdapter
+    from tests.openai_fakes import (
+        FakeEncoding,
+        FakeOpenAIClient,
+        hello_logprob_tokens,
+        make_chat_response,
+    )
+
+    built: list[str] = []
+
+    def _build(
+        *, model_id: str | None, max_visible_tokens: int | None, capture_k: int
+    ) -> OpenAIChatAdapter:
+        built.append(str(model_id))
+        return OpenAIChatAdapter(
+            "gpt-4o-mini",
+            client=FakeOpenAIClient([make_chat_response(hello_logprob_tokens())]),
+            encoding=FakeEncoding(),
+        )
+
+    monkeypatch.setattr("llmfr.cli._build_openai_adapter", _build)
+    code = run(
+        [
+            "record",
+            "Hi",
+            "--model",
+            "gpt-4o-mini",
+            "--store",
+            str(tmp_path),
+            "--max-new-tokens",
+            "2",
+            "--greedy",
+        ]
+    )
+    assert code == 0
+    capsys.readouterr()
+    assert built == ["gpt-4o-mini"]
+
+
+def test_cli_record_openai_missing_key(
+    monkeypatch: pytest.MonkeyPatch, capsys: CaptureFixture[str]
+) -> None:
+    from llmfr.adapters.openai import OPENAI_KEY_ENV, OpenAIAPIKeyMissingError
+
+    monkeypatch.delenv(OPENAI_KEY_ENV, raising=False)
+
+    def _boom(**_kwargs: object) -> None:
+        raise OpenAIAPIKeyMissingError()
+
+    monkeypatch.setattr("llmfr.cli._build_openai_adapter", _boom)
+    assert run(["record", "hello", "--provider", "openai"]) == 1
+    err = capsys.readouterr().err
+    assert "error:" in err
+    assert OPENAI_KEY_ENV in err
+    assert "Traceback" not in err
+    assert "--api-key" in err
