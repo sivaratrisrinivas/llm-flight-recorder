@@ -506,3 +506,42 @@ def test_cli_record_openai_missing_key(
     assert OPENAI_KEY_ENV in err
     assert "Traceback" not in err
     assert "--api-key" in err
+
+
+def test_cli_record_openai_omitted_logprobs_fail_closed(
+    tmp_path: Path, capsys: CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from llmfr.adapters.openai import OpenAIChatAdapter
+    from tests.openai_fakes import (
+        FakeEncoding,
+        FakeOpenAIClient,
+        hello_logprob_tokens,
+        make_chat_response,
+    )
+
+    client = FakeOpenAIClient(
+        [make_chat_response(hello_logprob_tokens(), output_text="Hello", include_logprobs=False)]
+    )
+    monkeypatch.setattr(
+        "llmfr.cli._build_openai_adapter",
+        lambda **_kwargs: OpenAIChatAdapter("gpt-4o-mini", client=client, encoding=FakeEncoding()),
+    )
+    code = run(
+        [
+            "record",
+            "Hi",
+            "--provider",
+            "openai",
+            "--store",
+            str(tmp_path),
+            "--max-new-tokens",
+            "2",
+            "--greedy",
+        ]
+    )
+    assert code == 1
+    err = capsys.readouterr().err
+    assert "error:" in err
+    assert "per-token logprob content" in err
+    assert "Traceback" not in err
+    assert TraceStore(tmp_path).list() == []

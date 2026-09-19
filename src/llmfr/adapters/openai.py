@@ -45,8 +45,12 @@ _OPENAI_INSTALL_HINT = (
     f"Set {OPENAI_KEY_ENV} in the environment. llmfr does not accept --api-key."
 )
 
-_UNAVAILABLE_NO_LOGPROBS = "OpenAI response did not include top_logprobs; refusing to invent them"
-_UNAVAILABLE_UNSUPPORTED = "OpenAI model or API rejected logprobs; refusing to invent scores"
+_UNAVAILABLE_NO_LOGPROBS = (
+    "OpenAI response did not include per-token logprob content; refusing to invent tokens or scores"
+)
+_UNAVAILABLE_UNSUPPORTED = (
+    "OpenAI model or API rejected logprobs; refusing to record without real per-token scores"
+)
 
 
 class OpenAIExtraMissingError(ImportError):
@@ -64,6 +68,10 @@ class OpenAIAPIKeyMissingError(RuntimeError):
             f"{OPENAI_KEY_ENV} is not set. llmfr reads the key from the environment "
             "only and does not accept --api-key."
         )
+
+
+class OpenAILogprobsUnavailableError(RuntimeError):
+    """Raised when Chat Completions did not return per-token logprob content."""
 
 
 def _import_backend() -> tuple[Any, Any]:
@@ -119,10 +127,11 @@ class OpenAIChatAdapter:
     """Chat Completions adapter. Scores come from the API or not at all.
 
     `complete_prompt` is the recording path: one `chat.completions.create`
-    with `logprobs=True` and `top_logprobs=k`. The recorder does not run
-    LocalRNG over a fake vocab. `next_token_logits` exists for the
-    ModelAdapter protocol and issues a one-token completion; it still
-    returns an empty `logits` tuple.
+    with `logprobs=True` and `top_logprobs=k`. Recording fails closed if the
+    response has no per-token logprob content: it does not re-tokenize the
+    completion text. The recorder does not run LocalRNG over a fake vocab.
+    `next_token_logits` exists for the ModelAdapter protocol and issues a
+    one-token completion; it still returns an empty `logits` tuple.
 
     Chat-template tokens that the hosted model prepends are not visible in
     the API response. Stored `full_history` / `model_visible_context` are
@@ -262,12 +271,11 @@ class OpenAIChatAdapter:
         if generation.stop:
             kwargs["stop"] = list(generation.stop)
 
-        response, requested_logprobs = self._create(kwargs)
+        response = self._create(kwargs)
         return self._completion_from_response(
             response,
             prompt_ids=prompt_ids,
             capture_k=api_k,
-            requested_logprobs=requested_logprobs,
         )
 
     def next_token_logits(self, model_visible_context: Sequence[int]) -> StepLogits:
@@ -296,16 +304,13 @@ class OpenAIChatAdapter:
             backend_sampled_logprob=step.logprob,
         )
 
-    def _create(self, kwargs: dict[str, Any]) -> tuple[Any, bool]:
+    def _create(self, kwargs: dict[str, Any]) -> Any:
         try:
-            return self._chat_create(kwargs), True
+            return self._chat_create(kwargs)
         except Exception as exc:
             if "logprob" not in str(exc).lower():
                 raise
-            fallback = dict(kwargs)
-            fallback.pop("logprobs", None)
-            fallback.pop("top_logprobs", None)
-            return self._chat_create(fallback), False
+            raise OpenAILogprobsUnavailableError(_UNAVAILABLE_UNSUPPORTED) from exc
 
     def _chat_create(self, kwargs: dict[str, Any]) -> Any:
         chat = getattr(self._client, "chat", None)
@@ -321,53 +326,29 @@ class OpenAIChatAdapter:
         *,
         prompt_ids: tuple[int, ...],
         capture_k: int,
-        requested_logprobs: bool,
     ) -> HostedCompletion:
         choice = _first_choice(response)
         message = _get(choice, "message")
         output_text = _message_text(message)
         content_items = _logprob_content(choice)
 
-        if content_items:
-            steps = tuple(
-                self._step_from_logprob_item(item, capture_k=capture_k) for item in content_items
-            )
-            if not output_text:
-                output_text = "".join(step.token for step in steps)
-            return HostedCompletion(
-                prompt_token_ids=prompt_ids,
-                output_text=output_text,
-                steps=steps,
-                logprobs_available=True,
-                unavailable_reason=None,
-                capture_k=capture_k,
-            )
+        if not content_items:
+            raise OpenAILogprobsUnavailableError(_UNAVAILABLE_NO_LOGPROBS)
 
-        if not output_text:
-            finish = _get(choice, "finish_reason")
-            raise RuntimeError(
-                "OpenAI returned an empty completion"
-                + (f" (finish_reason={finish!r})" if finish is not None else "")
-            )
-        token_ids = tuple(self.encode(output_text))
         steps = tuple(
-            HostedTokenStep(
-                token_id=token_id,
-                token=self.decode_token(token_id),
-                logprob=None,
-                top_k=(),
-                rank=None,
-            )
-            for token_id in token_ids
+            self._step_from_logprob_item(item, capture_k=capture_k) for item in content_items
         )
-        reason = _UNAVAILABLE_NO_LOGPROBS if requested_logprobs else _UNAVAILABLE_UNSUPPORTED
+        if not any(step.logprob is not None or step.top_k for step in steps):
+            raise OpenAILogprobsUnavailableError(_UNAVAILABLE_NO_LOGPROBS)
+        if not output_text:
+            output_text = "".join(step.token for step in steps)
         return HostedCompletion(
             prompt_token_ids=prompt_ids,
             output_text=output_text,
             steps=steps,
-            logprobs_available=False,
-            unavailable_reason=reason,
-            capture_k=None,
+            logprobs_available=True,
+            unavailable_reason=None,
+            capture_k=capture_k,
         )
 
     def _step_from_logprob_item(self, item: Any, *, capture_k: int) -> HostedTokenStep:

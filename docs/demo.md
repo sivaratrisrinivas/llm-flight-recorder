@@ -161,7 +161,7 @@ python scripts/capture_demo.py --backend fake --out /tmp/llmfr-demo-fake
 ## Limitations
 
 - Replay matching sampled token ids on this CPU pin is not bit-identical logits across GPU, dtype, or PyTorch builds (`docs/adr/0005-deterministic-replay.md`).
-- Hosted APIs that omit real logprobs are recorded as `logits.mode=none`. OpenAI can also store returned `top_logprobs` as logprob-only top-k (`logit=None`). That is not a full-vocab logit vector, and OpenAI replay is `not_replayable`. llmfr does not fill zeros or a uniform vocab.
+- Hosted traces that already store `logits.mode=none` stay honest; compare does not invent logits. OpenAI recording fails closed if the API omits per-token logprob content: it does not re-tokenize the completion into fake steps. Returned `top_logprobs` are stored as logprob-only top-k (`logit=None`). That is not a full-vocab logit vector, and OpenAI replay is `not_replayable`. llmfr does not fill zeros or a uniform vocab.
 - Default `sshleifer/tiny-gpt2` is a CI smoke model, not an English demo.
 - Compare classifies stored events. It does not call a live model, and it does not upgrade a later logit diff into a second root cause.
 - v1 storage is a local directory (SQLite index plus JSON/JSONL). No Kafka, Redis, Postgres, or Kubernetes control plane (`docs/adr/0002-v1-storage.md`).

@@ -27,6 +27,7 @@ from llmfr.adapters.openai import (
     OpenAIAPIKeyMissingError,
     OpenAIChatAdapter,
     OpenAIExtraMissingError,
+    OpenAILogprobsUnavailableError,
     openai_model_name,
     resolve_record_provider,
 )
@@ -74,6 +75,7 @@ _RECORD_ERRORS = (
     HuggingFaceExtraMissingError,
     OpenAIExtraMissingError,
     OpenAIAPIKeyMissingError,
+    OpenAILogprobsUnavailableError,
 )
 
 app = typer.Typer(

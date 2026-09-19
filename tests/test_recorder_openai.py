@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from llmfr.adapters.openai import OpenAIChatAdapter
+import pytest
+
+from llmfr.adapters.openai import OpenAIChatAdapter, OpenAILogprobsUnavailableError
 from llmfr.core.schema import GenerationConfig
 from llmfr.privacy import REDACTED, redact_trace
 from llmfr.record import record_generation
@@ -49,23 +51,21 @@ def test_record_openai_stores_top_logprobs_without_logits(tmp_path: Path) -> Non
     assert loaded.events[0].top_k[0].logit is None
 
 
-def test_record_openai_without_logprobs_is_mode_none() -> None:
+def test_record_openai_without_logprobs_fails_closed(tmp_path: Path) -> None:
+    store = TraceStore(tmp_path)
     client = FakeOpenAIClient(
         [make_chat_response(hello_logprob_tokens(), output_text="Hello", include_logprobs=False)]
     )
-    trace = record_generation(
-        _adapter(client),
-        "Hi",
-        generation=GenerationConfig(max_new_tokens=2, do_sample=False),
-    )
-    assert trace.run_metadata.logits.mode == "none"
-    assert trace.run_metadata.logits.unavailable_reason is not None
-    assert "invent" in trace.run_metadata.logits.unavailable_reason
-    assert all(not event.top_k for event in trace.events)
-    assert all(event.sampled_logit is None for event in trace.events)
-    assert all(event.sampled_logprob is None for event in trace.events)
-    assert all(event.sampled_prob is None for event in trace.events)
-    assert trace.events
+    with pytest.raises(OpenAILogprobsUnavailableError, match="per-token logprob content"):
+        record_generation(
+            _adapter(client),
+            "Hi",
+            generation=GenerationConfig(max_new_tokens=2, do_sample=False),
+            store=store,
+        )
+    assert store.list() == []
+    assert len(client.calls) == 1
+    assert client.calls[0]["logprobs"] is True
 
 
 def test_record_openai_sampled_logprob_without_top_logprobs_is_topk() -> None:

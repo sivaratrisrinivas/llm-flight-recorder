@@ -215,15 +215,13 @@ def _record_hosted(
     if not completion.steps:
         raise RuntimeError("hosted adapter returned no tokens; refusing to invent them")
 
-    has_real_scores = _hosted_has_real_scores(completion)
-    stored_k = completion.capture_k if completion.capture_k is not None else capture_k
-    if has_real_scores:
-        logits = LogitsCapture(mode="topk", k=stored_k)
-    else:
+    if not _hosted_has_real_scores(completion):
         reason = completion.unavailable_reason or (
             "hosted API did not expose real logprobs; refusing to invent them"
         )
-        logits = LogitsCapture(mode="none", unavailable_reason=reason)
+        raise RuntimeError(reason)
+    stored_k = completion.capture_k if completion.capture_k is not None else capture_k
+    logits = LogitsCapture(mode="topk", k=stored_k)
 
     history_ids = list(prompt_ids)
     history_text = prompt
@@ -239,7 +237,6 @@ def _record_hosted(
         sampled_prob = None
         if sampled_logprob is not None:
             sampled_prob = min(1.0, max(0.0, math.exp(sampled_logprob)))
-        top_k = [] if logits.mode == "none" else list(step.top_k)
         events.append(
             Event(
                 step=step_index,
@@ -248,8 +245,8 @@ def _record_hosted(
                 sampled_logit=None,
                 sampled_prob=sampled_prob,
                 sampled_logprob=sampled_logprob,
-                sampled_rank=None if logits.mode == "none" else step.rank,
-                top_k=top_k,
+                sampled_rank=step.rank,
+                top_k=list(step.top_k),
                 full_history=history_ctx,
                 model_visible_context=history_ctx,
             )
@@ -279,11 +276,10 @@ def _record_hosted(
 def _hosted_has_real_scores(completion: HostedCompletion) -> bool:
     """True when the API returned any real logprob or top-k row.
 
-    Per-token logprob with empty ``top_logprobs`` still counts. Re-tokenized
-    output with no scores does not.
+    Per-token logprob with empty ``top_logprobs`` still counts. A completion
+    with no scores does not; the hosted path fails closed instead of storing
+    reconstructed token steps.
     """
-    if completion.logprobs_available:
-        return True
     return any(step.logprob is not None or step.top_k for step in completion.steps)
 
 

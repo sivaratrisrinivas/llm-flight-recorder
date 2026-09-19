@@ -37,9 +37,10 @@ invent the rest, is in scope.
    `chat.completions.create` once with `logprobs=True` and
    `top_logprobs=k` (capped at 20). Event `top_k` rows store `logprob` /
    `prob` from that list. `logit` stays `None`. If the response omits
-   logprobs, or the model rejects them, the trace uses `logits.mode=none`
-   plus `unavailable_reason`. Do not fill zeros, uniforms, or softmax over
-   the shortlist and call them the model distribution.
+   per-token logprob content, or the model rejects logprobs, recording
+   fails closed. Do not re-tokenize the completion text into fake steps,
+   and do not store an opaque blob. Do not fill zeros, uniforms, or
+   softmax over the shortlist and call them the model distribution.
 
 4. **The recorder does not sample locally on this path.** Hosted tokens are
    the API's sampled tokens. Temperature / greedy map to the API request.
@@ -59,15 +60,19 @@ invent the rest, is in scope.
 ## Consequences
 
 - HF demos, CI, and the tiny-gpt2 default are unchanged.
-- An OpenAI JSON/JSONL file is a valid v1 Trace. Missing scores are
-  explicit. Present scores are the API's `top_logprobs`, which is weaker
-  evidence than pinned HF CPU logits.
+- An OpenAI JSON/JSONL file is a valid v1 Trace only when the API returned
+  per-token logprob content. Recording fails closed otherwise. Present
+  scores are the API's logprobs / `top_logprobs`, which is weaker evidence
+  than pinned HF CPU logits.
 - Changing the default backend to OpenAI would need a new ADR.
 
 ## Alternatives considered
 
 - Treat `top_logprobs` as full logits so LocalRNG replay "works": the lie
   this adapter exists to prevent.
+- Re-tokenize the completion with tiktoken, or store the message as an
+  opaque blob, when logprobs are missing: both write a trace that looks
+  like a token sequence without the API's per-token scores.
 - Keep hosted APIs entirely out of v1: honest, but then llmfr only applies
   to local toy checkpoints.
 - An `--api-key` CLI flag: easy to paste into shell history and help text.

@@ -13,6 +13,7 @@ from llmfr.adapters.openai import (
     OpenAIAPIKeyMissingError,
     OpenAIChatAdapter,
     OpenAIExtraMissingError,
+    OpenAILogprobsUnavailableError,
     looks_like_openai_model,
     openai_model_name,
     resolve_record_provider,
@@ -97,42 +98,87 @@ def test_next_token_logits_leaves_vocab_vector_empty() -> None:
         _ = step.greedy_token_id
 
 
-def test_missing_top_logprobs_are_not_invented() -> None:
+def test_omitted_logprobs_fail_closed() -> None:
     client = FakeOpenAIClient(
         [make_chat_response(hello_logprob_tokens(), output_text="Hello", include_logprobs=False)]
     )
     adapter = _adapter(client)
-    completion = adapter.complete_prompt(
-        "Hi",
-        generation=GenerationConfig(max_new_tokens=2, do_sample=False),
-        capture_k=5,
-    )
-    assert completion.logprobs_available is False
-    assert completion.unavailable_reason is not None
-    assert "invent" in completion.unavailable_reason
-    assert all(not step.top_k for step in completion.steps)
-    assert all(step.logprob is None for step in completion.steps)
+    with pytest.raises(OpenAILogprobsUnavailableError, match="per-token logprob content"):
+        adapter.complete_prompt(
+            "Hi",
+            generation=GenerationConfig(max_new_tokens=2, do_sample=False),
+            capture_k=5,
+        )
+    assert len(client.calls) == 1
+    assert client.calls[0]["logprobs"] is True
+    assert "top_logprobs" in client.calls[0]
 
 
-def test_logprobs_rejected_by_api_retries_without_inventing() -> None:
-    tokens = hello_logprob_tokens()
+def test_empty_logprob_content_fail_closed() -> None:
     client = FakeOpenAIClient(
-        [make_chat_response(tokens, output_text="Hello", include_logprobs=False)],
+        [
+            SimpleNamespace(
+                choices=[
+                    SimpleNamespace(
+                        message=SimpleNamespace(content="Hello"),
+                        logprobs=SimpleNamespace(content=[]),
+                        finish_reason="stop",
+                    )
+                ]
+            )
+        ]
+    )
+    adapter = _adapter(client)
+    with pytest.raises(OpenAILogprobsUnavailableError, match="per-token logprob content"):
+        adapter.complete_prompt(
+            "Hi",
+            generation=GenerationConfig(max_new_tokens=2, do_sample=False),
+            capture_k=5,
+        )
+
+
+def test_logprob_items_without_scores_fail_closed() -> None:
+    client = FakeOpenAIClient(
+        [
+            SimpleNamespace(
+                choices=[
+                    SimpleNamespace(
+                        message=SimpleNamespace(content="Hello"),
+                        logprobs=SimpleNamespace(
+                            content=[
+                                SimpleNamespace(token="He", logprob=None, top_logprobs=[]),
+                                SimpleNamespace(token="llo", logprob=None, top_logprobs=[]),
+                            ]
+                        ),
+                        finish_reason="stop",
+                    )
+                ]
+            )
+        ]
+    )
+    adapter = _adapter(client)
+    with pytest.raises(OpenAILogprobsUnavailableError, match="per-token logprob content"):
+        adapter.complete_prompt(
+            "Hi",
+            generation=GenerationConfig(max_new_tokens=2, do_sample=False),
+            capture_k=5,
+        )
+
+
+def test_logprobs_rejected_by_api_fail_closed() -> None:
+    client = FakeOpenAIClient(
         errors=[RuntimeError("logprobs are not supported for this model")],
     )
     adapter = _adapter(client)
-    completion = adapter.complete_prompt(
-        "Hi",
-        generation=GenerationConfig(max_new_tokens=2, do_sample=False),
-        capture_k=5,
-    )
-    assert len(client.calls) == 2
+    with pytest.raises(OpenAILogprobsUnavailableError, match="rejected logprobs"):
+        adapter.complete_prompt(
+            "Hi",
+            generation=GenerationConfig(max_new_tokens=2, do_sample=False),
+            capture_k=5,
+        )
+    assert len(client.calls) == 1
     assert client.calls[0]["logprobs"] is True
-    assert "logprobs" not in client.calls[1]
-    assert "top_logprobs" not in client.calls[1]
-    assert completion.logprobs_available is False
-    assert completion.unavailable_reason is not None
-    assert "invent" in completion.unavailable_reason
+    assert client.calls[0]["top_logprobs"] == 5
 
 
 def test_seed_is_forwarded_not_used_as_local_rng() -> None:
