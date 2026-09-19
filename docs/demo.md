@@ -1,12 +1,18 @@
 # Demo
 
-Checked-in traces were recorded with the public CLI against
-`Qwen/Qwen2.5-0.5B-Instruct` (Hub commit
+Checked-in traces were recorded with the public CLI against the ungated
+`Qwen/Qwen2.5-0.5B-Instruct` checkpoint (Hub commit
 `7ae557604adf67be50417f59c2c2f167def9a775`) on CPU, torch `2.14.0+cpu`,
 transformers `5.17.0`. Scores in the JSONL files are the model's captured
 top-k, not invented logits. The library default remains `sshleifer/tiny-gpt2`
 (CI/smoke). Omit `--model` for that path; CI does not download the 0.5B
 weights. See `docs/adr/0003-hf-adapter-default-model.md`.
+
+`meta-llama/Llama-3.2-1B-Instruct` was preferred for a 1B-class portfolio
+demo. That Hub repo is gated. Tokenizer and weight downloads without a
+logged-in token returned HTTP 401 (`GatedRepoError`). This capture
+environment had no `HF_TOKEN`, so Llama was not recorded. Qwen 0.5B is
+the accepted portfolio demo.
 
 Live path (new `trace_id` values each time):
 
@@ -184,9 +190,10 @@ python scripts/capture_demo.py --backend fake --out /tmp/llmfr-demo-fake
 - Replay matching sampled token ids on this CPU pin is not bit-identical logits across GPU, dtype, or PyTorch builds (`docs/adr/0005-deterministic-replay.md`).
 - Hosted traces that already store `logits.mode=none` stay honest; compare does not invent logits. OpenAI recording fails closed if the API omits per-token logprob content: it does not re-tokenize the completion into fake steps. Returned `top_logprobs` are stored as logprob-only top-k (`logit=None`). That is not a full-vocab logit vector, and OpenAI replay is `not_replayable`. llmfr does not fill zeros or a uniform vocab.
 - Default `sshleifer/tiny-gpt2` is a CI smoke model, not an English demo.
-  Portfolio Demo 1/2 captures use `Qwen/Qwen2.5-0.5B-Instruct` at
-  `7ae557604adf67be50417f59c2c2f167def9a775`. CI does not download those
-  weights.
+  Portfolio Demo 1/2 captures use ungated `Qwen/Qwen2.5-0.5B-Instruct` at
+  `7ae557604adf67be50417f59c2c2f167def9a775`. `Llama-3.2-1B-Instruct` was
+  preferred but blocked on gated Hub auth (no `HF_TOKEN` in the capture
+  environment). CI does not download the 0.5B weights.
 - Compare classifies stored events. It does not call a live model, and it does not upgrade a later logit diff into a second root cause.
 - v1 storage is a local directory (SQLite index plus JSON/JSONL). No Kafka, Redis, Postgres, or Kubernetes control plane (`docs/adr/0002-v1-storage.md`).
 - No compare UI in this tree. No LangChain wrapper.

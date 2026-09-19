@@ -24,14 +24,15 @@ because tiny-gpt2 (2 layers, 2 heads, embedding size 2) is only a smoke test.
    `next_token_logits` on that model. They may mark the download as slow.
    They must not substitute a canned logit vector.
 
-2. **Portfolio demo:** `Qwen/Qwen2.5-0.5B-Instruct`  
+2. **Portfolio demo:** ungated `Qwen/Qwen2.5-0.5B-Instruct`  
    Constants: `PORTFOLIO_DEMO_MODEL_ID` and `PORTFOLIO_DEMO_MODEL_REVISION`
    (`7ae557604adf67be50417f59c2c2f167def9a775`). This 0.5B instruct
    checkpoint produces readable English on a short reasoning prompt on CPU.
    Demo scripts pass `--model` and `--revision` explicitly. Tests assert
    against checked-in `examples/demo` traces and do not download these
-   weights. `Llama-3.2-1B-Instruct` was the fallback if 0.5B was unreadable
-   or unavailable; 0.5B was enough.
+   weights. `meta-llama/Llama-3.2-1B-Instruct` was preferred for a 1B-class
+   demo; that Hub repo is gated and the capture environment had no
+   `HF_TOKEN` (HTTP 401 / `GatedRepoError`), so Llama was not recorded.
 
 3. **Install:** torch and transformers live in the optional extra `hf`. A
    core `pip install llmfr` (M1 schema and storage) stays free of those
@@ -84,9 +85,10 @@ fill zeros or a uniform distribution to look like a local model.
 - Portfolio `distilbert/distilgpt2`: English completion, not an instruct
   reasoning path. Replaced by `Qwen/Qwen2.5-0.5B-Instruct` for the
   checked-in Demo 1/2 captures.
-- Portfolio `meta-llama/Llama-3.2-1B-Instruct`: 1B-class fallback if 0.5B
-  was unreadable or gated. Not used; Qwen 0.5B ran on CPU and produced
-  readable seed/temperature splits.
+- Portfolio `meta-llama/Llama-3.2-1B-Instruct`: preferred 1B-class instruct
+  demo. Not used: the Hub repo is gated, and the capture environment had
+  no `HF_TOKEN` (HTTP 401 / `GatedRepoError` on tokenizer and weights).
+  Ungated Qwen 0.5B is the accepted portfolio capture.
 - Vendor a numpy dump of tiny-gpt2 logits in the repo: avoids the Hub, but
   is exactly the fake-logits path this project forbids.
 - Require CUDA: fails this environment and GitHub-hosted runners.

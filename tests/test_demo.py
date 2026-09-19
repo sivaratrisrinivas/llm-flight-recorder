@@ -99,6 +99,9 @@ def test_readme_is_what_why_how_essentials_only() -> None:
     assert "CI/smoke" in text
     assert PORTFOLIO_DEMO_MODEL_ID in text
     assert PORTFOLIO_DEMO_MODEL_REVISION in text
+    assert "ungated" in text
+    assert "Llama-3.2-1B-Instruct" in text
+    assert "HF_TOKEN" in text
     assert "Think step by step" in text
 
 
@@ -116,6 +119,10 @@ def test_demo_markdown_embeds_captured_reports() -> None:
     for path in ADR_LINKS:
         assert path in demo
     assert "does not invent" in demo.lower() or "not invented" in demo.lower()
+    assert "ungated" in demo
+    assert "Llama-3.2-1B-Instruct" in demo
+    assert "gated" in demo
+    assert "HF_TOKEN" in demo
     source = (CAPTURES / "SOURCE.txt").read_text(encoding="utf-8")
     assert "backend=huggingface" in source
     assert PORTFOLIO_DEMO_MODEL_ID in source

@@ -61,7 +61,7 @@ pip install --index-url https://download.pytorch.org/whl/cpu torch
 pip install --upgrade-strategy only-if-needed -e ".[dev,hf]"
 ```
 
-Default model is `sshleifer/tiny-gpt2` (CI/smoke). Store directory defaults to `.llmfr`. Omit `--model` to keep that smoke path. Portfolio Demo 1/2 use `Qwen/Qwen2.5-0.5B-Instruct` at Hub commit `7ae557604adf67be50417f59c2c2f167def9a775` and a reasoning prompt (real scores, not invented):
+Default model is `sshleifer/tiny-gpt2` (CI/smoke). Store directory defaults to `.llmfr`. Omit `--model` to keep that smoke path. Portfolio Demo 1/2 use the ungated `Qwen/Qwen2.5-0.5B-Instruct` checkpoint at Hub commit `7ae557604adf67be50417f59c2c2f167def9a775` and a reasoning prompt (real scores, not invented). `meta-llama/Llama-3.2-1B-Instruct` was preferred for a 1B-class demo, but that Hub repo is gated and the capture environment had no `HF_TOKEN`, so Llama was not recorded:
 
 ```bash
 PROMPT="A farmer has 17 sheep. All but 9 run away. How many sheep are left? Think step by step, then give the final number."
