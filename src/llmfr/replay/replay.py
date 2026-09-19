@@ -8,11 +8,25 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-from llmfr.adapters.huggingface import HuggingFaceCausalLMAdapter, HuggingFaceExtraMissingError
+from pydantic import ValidationError
+
+from llmfr.adapters.huggingface import (
+    HuggingFaceCausalLMAdapter,
+    HuggingFaceExtraMissingError,
+    _as_commit_hash,
+)
 from llmfr.core.schema import GenerationConfig, TopKCandidate, Trace
 from llmfr.record.recorder import RecordableAdapter
 from llmfr.record.sample import LocalRNG, choose_token, is_greedy
 from llmfr.replay.result import BIT_IDENTICAL_CAVEAT, ReplayResult, ReplayStatus, StepReplay
+
+_REPLAY_RUNTIME_ERRORS = (
+    OSError,
+    TypeError,
+    ValueError,
+    RuntimeError,
+    ValidationError,
+)
 
 _CPU_DEVICES = frozenset({"cpu", "cpu:0"})
 
@@ -37,8 +51,9 @@ def build_adapter_for_trace(trace: Trace) -> tuple[HuggingFaceCausalLMAdapter, l
             f"cannot build a Hugging Face adapter for provider {trace.model.provider!r}"
         )
     revision = trace.model.revision
-    if not revision:
-        raise ValueError("trace has no Hub revision pin; refusing to replay against a moving name")
+    pin_error = _moving_revision_reason(revision)
+    if pin_error is not None:
+        raise ValueError(pin_error)
     requested = _requested_device(trace)
     device, device_note = _replay_device(requested)
     if device_note:
@@ -127,7 +142,17 @@ def replay_trace(
             total_steps=len(trace.events),
         )
 
-    prompt_ids, prompt_notes = _prompt_ids(trace, adapter)
+    try:
+        prompt_ids, prompt_notes = _prompt_ids(trace, adapter)
+    except _REPLAY_RUNTIME_ERRORS as exc:
+        return _blocked(
+            trace_id=trace_id,
+            recorded_revision=recorded_revision,
+            replayed_revision=replayed_revision,
+            reason=str(exc),
+            notes=tuple(notes),
+            total_steps=len(trace.events),
+        )
     notes.extend(prompt_notes)
     if not prompt_ids:
         return _blocked(
@@ -151,56 +176,81 @@ def replay_trace(
     logits_ok = True
     compared_a_logit = False
 
-    for event in trace.events:
-        step_logits = adapter.next_token_logits(history)
-        decision = choose_token(
-            step_logits.logits,
-            temperature=generation.temperature,
-            greedy=greedy,
-            rng=None if greedy else rng,
-            sampler_top_k=generation.top_k,
-        )
-        replayed_id = decision.sampled_token_id
-        prefix_matched = history == event.full_history.token_ids
-        token_matched = replayed_id == event.sampled_token_id
-        replayed_logit = _logit_at(step_logits.logits, replayed_id)
-        recorded_logit = event.sampled_logit
-        logit_matched = _logit_match(recorded_logit, step_logits.logits, event.sampled_token_id)
-
-        if prefix_matched:
-            if recorded_logit is not None:
-                compared_a_logit = True
-                if logit_matched is not True:
-                    logits_ok = False
-            if event.top_k:
-                compared_a_logit = True
-                take = len(event.top_k) if capture_k is None else min(len(event.top_k), capture_k)
-                replayed_top = step_logits.top_k_candidates(
-                    take,
-                    decode=adapter.decode_token,
-                )
-                if not _topk_bit_identical(event.top_k[:take], replayed_top):
-                    logits_ok = False
-
-        if matched_prefix and token_matched and prefix_matched:
-            matched_steps += 1
-        elif first_unmatched is None:
-            first_unmatched = event.step
-            matched_prefix = False
-
-        step_rows.append(
-            StepReplay(
-                step=event.step,
-                recorded_token_id=event.sampled_token_id,
-                replayed_token_id=replayed_id,
-                token_matched=token_matched,
-                prefix_matched=prefix_matched,
-                recorded_logit=recorded_logit,
-                replayed_logit=replayed_logit,
-                logit_matched=logit_matched,
+    try:
+        for event in trace.events:
+            step_logits = adapter.next_token_logits(history)
+            decision = choose_token(
+                step_logits.logits,
+                temperature=generation.temperature,
+                greedy=greedy,
+                rng=None if greedy else rng,
+                sampler_top_k=generation.top_k,
             )
+            replayed_id = decision.sampled_token_id
+            prefix_matched = history == event.full_history.token_ids
+            token_matched = replayed_id == event.sampled_token_id
+            replayed_logit = _logit_at(step_logits.logits, replayed_id)
+            recorded_logit = event.sampled_logit
+            logit_matched = _logit_match(recorded_logit, step_logits.logits, event.sampled_token_id)
+
+            if prefix_matched:
+                if recorded_logit is not None:
+                    compared_a_logit = True
+                    if logit_matched is not True:
+                        logits_ok = False
+                if event.top_k:
+                    take = (
+                        len(event.top_k) if capture_k is None else min(len(event.top_k), capture_k)
+                    )
+                    replayed_top = step_logits.top_k_candidates(
+                        take,
+                        decode=adapter.decode_token,
+                    )
+                    topk_ok, floats_compared = _topk_logit_compare(
+                        event.top_k[:take],
+                        replayed_top,
+                    )
+                    if floats_compared:
+                        compared_a_logit = True
+                    if not topk_ok:
+                        logits_ok = False
+
+            if matched_prefix and token_matched and prefix_matched:
+                matched_steps += 1
+            elif first_unmatched is None:
+                first_unmatched = event.step
+                matched_prefix = False
+
+            step_rows.append(
+                StepReplay(
+                    step=event.step,
+                    recorded_token_id=event.sampled_token_id,
+                    replayed_token_id=replayed_id,
+                    token_matched=token_matched,
+                    prefix_matched=prefix_matched,
+                    recorded_logit=recorded_logit,
+                    replayed_logit=replayed_logit,
+                    logit_matched=logit_matched,
+                )
+            )
+            history.append(replayed_id)
+    except _REPLAY_RUNTIME_ERRORS as exc:
+        notes.append(f"replay stopped after {len(step_rows)} step(s): {exc}")
+        return ReplayResult(
+            trace_id=trace_id,
+            status="not_replayable",
+            matched_steps=matched_steps,
+            total_steps=len(trace.events),
+            first_unmatched_step=first_unmatched,
+            token_ids_matched=False,
+            logits_bit_identical=False,
+            bit_identical=False,
+            recorded_revision=recorded_revision,
+            replayed_revision=replayed_revision,
+            reason=str(exc),
+            notes=tuple(notes),
+            steps=tuple(step_rows),
         )
-        history.append(replayed_id)
 
     total = len(trace.events)
     token_ids_matched = matched_steps == total and total > 0
@@ -280,10 +330,23 @@ def _not_replayable_reason(trace: Trace, adapter: RecordableAdapter | None) -> s
                 f"no adapter provided for provider {trace.model.provider!r}; "
                 "pass adapter=... or record a huggingface trace"
             )
-        if not trace.model.revision:
-            return "trace has no Hub revision pin; refusing to replay against a moving name"
+        pin_error = _moving_revision_reason(trace.model.revision)
+        if pin_error is not None:
+            return pin_error
         return None
     return _adapter_unusable(trace, adapter)
+
+
+def _moving_revision_reason(revision: str | None) -> str | None:
+    """Fail closed on missing or moving Hub refs before from_pretrained."""
+    if not revision:
+        return "trace has no Hub revision pin; refusing to replay against a moving name"
+    if _as_commit_hash(revision) is None:
+        return (
+            f"trace revision {revision!r} is not a 40-character Hub commit SHA; "
+            "refusing to download a moving name"
+        )
+    return None
 
 
 def _adapter_unusable(trace: Trace, adapter: RecordableAdapter) -> str | None:
@@ -339,18 +402,28 @@ def _logit_match(
     return recorded == replayed
 
 
-def _topk_bit_identical(
+def _topk_logit_compare(
     recorded: Sequence[TopKCandidate],
     replayed: Sequence[TopKCandidate],
-) -> bool:
+) -> tuple[bool, int]:
+    """Compare stored top-k rows to replay.
+
+    Returns ``(ok, floats_compared)``. Token-id agreement with ``logit=None``
+    does not count as a numeric comparison. ``ok`` is False when lengths or
+    token ids differ, or when a stored logit disagrees as a Python float.
+    """
     if len(recorded) != len(replayed):
-        return False
+        return False, 0
+    floats_compared = 0
+    ok = True
     for rec, rep in zip(recorded, replayed, strict=True):
         if rec.token_id != rep.token_id:
-            return False
-        if rec.logit is not None and rec.logit != rep.logit:
-            return False
-    return True
+            ok = False
+        if rec.logit is not None:
+            floats_compared += 1
+            if rec.logit != rep.logit:
+                ok = False
+    return ok, floats_compared
 
 
 def _requested_device(trace: Trace) -> str:

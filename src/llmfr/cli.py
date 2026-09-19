@@ -21,7 +21,7 @@ from llmfr.core.migrate import UnsupportedSchemaVersionError
 from llmfr.core.schema import GenerationConfig, Trace, load_path
 from llmfr.core.version import DEFAULT_TOP_K, SCHEMA_VERSION, __version__
 from llmfr.record import record_generation
-from llmfr.replay import ReplayResult, replay_trace
+from llmfr.replay import BIT_IDENTICAL_CAVEAT, ReplayResult, replay_trace
 from llmfr.storage import TraceStore
 from llmfr.storage.store import FormatName
 
@@ -162,13 +162,24 @@ def _cmd_record(args: argparse.Namespace) -> int:
 def _cmd_replay(args: argparse.Namespace) -> int:
     try:
         trace = TraceStore(Path(args.store)).get(args.trace_id)
-        result = _replay(trace)
     except KeyError as exc:
         sys.stderr.write(f"error: {exc}\n")
         return 1
     except _RECORD_ERRORS as exc:
         sys.stderr.write(f"error: {exc}\n")
         return 1
+    try:
+        result = _replay(trace)
+    except _RECORD_ERRORS as exc:
+        result = ReplayResult(
+            trace_id=str(trace.run_metadata.trace_id),
+            status="not_replayable",
+            matched_steps=0,
+            total_steps=len(trace.events),
+            recorded_revision=trace.model.revision,
+            reason=str(exc),
+            notes=(BIT_IDENTICAL_CAVEAT, f"replay failed: {exc}"),
+        )
     sys.stdout.write(result.model_dump_json(indent=2) + "\n")
     if result.status == "reproduced":
         return 0

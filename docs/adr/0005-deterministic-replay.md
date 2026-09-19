@@ -31,10 +31,11 @@ this runtime permits and report what matched.
    does not invent logits to force a match.
 
 2. **Weights are the stored Hub pin.** Hugging Face replay constructs
-   `HuggingFaceCausalLMAdapter(name, revision=ModelConfig.revision)`. A
-   missing revision is `not_replayable`. A moving name such as `main` is not
-   a pin. The CLI is `llmfr replay TRACE_ID` against the existing TraceStore
-   layout (ADR 0002).
+   `HuggingFaceCausalLMAdapter(name, revision=ModelConfig.revision)` only
+   after the revision matches the same 40-character commit SHA rule as
+   `_COMMIT_SHA` in the adapter. A missing revision, or a moving ref such
+   as `main`, is `not_replayable` before `from_pretrained`. The CLI is
+   `llmfr replay TRACE_ID` against the existing TraceStore layout (ADR 0002).
 
 3. **The result is structured and honest.** `ReplayResult` records
    `status`, `matched_steps` / `total_steps`, `token_ids_matched`,
@@ -42,7 +43,9 @@ this runtime permits and report what matched.
    every recorded sampled token id was produced again. It does not mean
    the logit vectors were bit-identical. `bit_identical` is true only when
    tokens matched and stored sampled / top-k logits compared equal as
-   Python floats. If tokens match and logits do not, the result stays
+   Python floats. Token-id agreement on a `logit=None` (prob-only) top-k
+   row is not a numeric comparison. If tokens match and no stored logit
+   floats were compared, or a compared float disagrees, the result stays
    `reproduced` with `logits_bit_identical=False` and a note. It never
    reports a full numeric match from tokens alone.
 

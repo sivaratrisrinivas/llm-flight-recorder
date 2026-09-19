@@ -11,7 +11,12 @@ from pytest import CaptureFixture
 from llmfr.cli import build_parser, run
 from llmfr.core.schema import GenerationConfig, LogitsCapture
 from llmfr.record import record_generation
-from llmfr.replay import BIT_IDENTICAL_CAVEAT, infer_max_visible_tokens, replay_trace
+from llmfr.replay import (
+    BIT_IDENTICAL_CAVEAT,
+    build_adapter_for_trace,
+    infer_max_visible_tokens,
+    replay_trace,
+)
 from llmfr.storage import TraceStore
 from tests.factories import make_trace
 from tests.fakes import FakeCausalLMAdapter
@@ -120,6 +125,44 @@ def test_token_match_without_logit_match_is_not_bit_identical() -> None:
     assert any("not a full numeric replay" in note for note in result.notes)
 
 
+def test_prob_only_topk_is_not_bit_identical() -> None:
+    recorded = record_generation(
+        _peaked_adapter(),
+        "x",
+        generation=GenerationConfig(max_new_tokens=2, do_sample=False),
+    )
+    events = []
+    for event in recorded.events:
+        top_k = [
+            candidate.model_copy(
+                update={
+                    "logit": None,
+                    "logprob": None,
+                    "prob": 0.5 if candidate.prob is None else candidate.prob,
+                }
+            )
+            for candidate in event.top_k
+        ]
+        events.append(
+            event.model_copy(
+                update={
+                    "sampled_logit": None,
+                    "sampled_logprob": None,
+                    "sampled_prob": 0.5,
+                    "top_k": top_k,
+                }
+            )
+        )
+    stripped = recorded.model_copy(update={"events": events})
+    result = replay_trace(stripped, adapter=_peaked_adapter())
+    assert result.status == "reproduced"
+    assert result.token_ids_matched is True
+    assert all(row.token_matched for row in result.steps)
+    assert result.logits_bit_identical is False
+    assert result.bit_identical is False
+    assert any("not a full numeric replay" in note for note in result.notes)
+
+
 def test_logits_unavailable_trace_is_not_replayable() -> None:
     trace = make_trace(logits_mode="none")
     result = replay_trace(trace, adapter=FakeCausalLMAdapter(prompt_ids=[1, 2, 3]))
@@ -157,6 +200,27 @@ def test_missing_hub_revision_is_not_replayable() -> None:
     assert result.status == "not_replayable"
     assert result.reason is not None
     assert "revision" in result.reason
+
+
+def test_moving_hub_revision_does_not_download(monkeypatch: pytest.MonkeyPatch) -> None:
+    def _boom(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError("from_pretrained must not run for a moving Hub ref")
+
+    monkeypatch.setattr("llmfr.replay.replay.HuggingFaceCausalLMAdapter", _boom)
+    huggingface = make_trace().model_copy(
+        update={
+            "model": make_trace().model.model_copy(
+                update={"provider": "huggingface", "revision": "main"}
+            )
+        }
+    )
+    result = replay_trace(huggingface)
+    assert result.status == "not_replayable"
+    assert result.reason is not None
+    assert "40-character" in result.reason
+    assert "moving" in result.reason
+    with pytest.raises(ValueError, match="moving"):
+        build_adapter_for_trace(huggingface)
 
 
 def test_adapter_without_replay_support_is_refused() -> None:
@@ -260,6 +324,53 @@ def test_cli_replay_unknown_trace_id(tmp_path: Path, capsys: CaptureFixture[str]
     assert "Traceback" not in err
 
 
+def test_replay_forward_failure_is_not_replayable() -> None:
+    recorded = record_generation(
+        _peaked_adapter(),
+        "x",
+        generation=GenerationConfig(max_new_tokens=2, do_sample=False),
+    )
+    boom = _peaked_adapter()
+
+    def _fail(_context: object) -> None:
+        raise RuntimeError("forward failed")
+
+    boom.next_token_logits = _fail  # type: ignore[method-assign]
+    result = replay_trace(recorded, adapter=boom)
+    assert result.status == "not_replayable"
+    assert result.token_ids_matched is False
+    assert result.bit_identical is False
+    assert result.reason is not None
+    assert "forward failed" in result.reason
+    assert any("replay stopped" in note for note in result.notes)
+
+
+def test_cli_replay_runtime_failure_prints_json(
+    tmp_path: Path, capsys: CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    recorded = record_generation(
+        _peaked_adapter(),
+        "x",
+        generation=GenerationConfig(max_new_tokens=2, do_sample=False),
+        store=TraceStore(tmp_path),
+    )
+
+    def _boom(_trace: object) -> None:
+        raise RuntimeError("forward failed")
+
+    monkeypatch.setattr("llmfr.cli._replay", _boom)
+    code = run(["replay", str(recorded.run_metadata.trace_id), "--store", str(tmp_path)])
+    assert code == 1
+    captured = capsys.readouterr()
+    assert "Traceback" not in captured.err
+    payload = json.loads(captured.out)
+    assert payload["status"] == "not_replayable"
+    assert payload["token_ids_matched"] is False
+    assert payload["bit_identical"] is False
+    assert "forward failed" in payload["reason"]
+    assert any("replay failed" in note for note in payload["notes"])
+
+
 def test_cli_replay_not_replayable_validation_error(
     tmp_path: Path, capsys: CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -271,6 +382,9 @@ def test_cli_replay_not_replayable_validation_error(
 
     monkeypatch.setattr("llmfr.cli._replay", _invalid)
     assert run(["replay", str(make_trace().run_metadata.trace_id), "--store", str(tmp_path)]) == 1
-    err = capsys.readouterr().err
-    assert "error:" in err
-    assert "Traceback" not in err
+    captured = capsys.readouterr()
+    assert "Traceback" not in captured.err
+    payload = json.loads(captured.out)
+    assert payload["status"] == "not_replayable"
+    assert payload["token_ids_matched"] is False
+    assert payload["reason"]
