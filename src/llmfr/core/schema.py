@@ -193,7 +193,12 @@ def dumps_json(trace: Trace) -> str:
 
 
 def loads_json(text: str) -> Trace:
-    payload = json.loads(text)
+    if not text.strip():
+        raise ValueError("empty or truncated JSON trace")
+    try:
+        payload = json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"corrupt or partial JSON trace: {exc}") from exc
     if not isinstance(payload, dict):
         raise TypeError("trace JSON must be an object")
     return Trace.model_validate(migrate_payload(payload))
@@ -214,13 +219,21 @@ def loads_jsonl(text: str) -> Trace:
     lines = [line for line in text.splitlines() if line.strip()]
     if not lines:
         raise ValueError("empty JSONL trace")
-    header = json.loads(lines[0])
+    try:
+        header = json.loads(lines[0])
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"corrupt or partial JSONL trace at line 1: {exc}") from exc
     if not isinstance(header, dict) or header.get("record") != "header":
         raise ValueError("first JSONL line must be a header record")
     header.pop("record")
     events: list[dict[str, Any]] = []
-    for line in lines[1:]:
-        record = json.loads(line)
+    for line_number, line in enumerate(lines[1:], start=2):
+        try:
+            record = json.loads(line)
+        except json.JSONDecodeError as exc:
+            raise ValueError(
+                f"corrupt or partial JSONL trace at line {line_number}: {exc}"
+            ) from exc
         if not isinstance(record, dict) or record.get("record") != "event":
             raise ValueError("JSONL body lines must be event records")
         record.pop("record")
@@ -231,6 +244,8 @@ def loads_jsonl(text: str) -> Trace:
 
 def load_path(path: str | Path) -> Trace:
     file_path = Path(path)
+    if not file_path.is_file():
+        raise FileNotFoundError(f"trace file not found: {file_path}")
     text = file_path.read_text(encoding="utf-8")
     if file_path.suffix == ".jsonl":
         return loads_jsonl(text)

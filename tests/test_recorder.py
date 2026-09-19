@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from llmfr.core.schema import GenerationConfig
+from llmfr.core.version import MAX_TOP_K
 from llmfr.record import RECORDER_PIPELINE, RecordableAdapter, record_generation
 from llmfr.storage import TraceStore
 from tests.fakes import FakeCausalLMAdapter
@@ -173,6 +174,27 @@ def test_empty_prompt_is_rejected() -> None:
             adapter,
             "",
             generation=GenerationConfig(max_new_tokens=1, do_sample=False),
+        )
+
+
+def test_empty_logits_are_refused() -> None:
+    adapter = FakeCausalLMAdapter(prompt_ids=[1], logits=())
+    with pytest.raises(ValueError, match="no logits"):
+        record_generation(
+            adapter,
+            "x",
+            generation=GenerationConfig(max_new_tokens=1, do_sample=False),
+        )
+
+
+def test_oversized_capture_k_is_rejected() -> None:
+    adapter = FakeCausalLMAdapter(prompt_ids=[1])
+    with pytest.raises(ValueError, match="capture_k"):
+        record_generation(
+            adapter,
+            "x",
+            generation=GenerationConfig(max_new_tokens=1, do_sample=False),
+            capture_k=MAX_TOP_K + 1,
         )
 
 

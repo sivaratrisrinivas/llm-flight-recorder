@@ -67,9 +67,13 @@ class StepLogits:
         """Ranked human-readable top-k from this step's real logits."""
         if k < 1:
             raise ValueError("k must be >= 1")
+        if k > MAX_TOP_K:
+            raise ValueError(
+                f"k must be <= {MAX_TOP_K}; refusing to store an oversized logit payload"
+            )
         if not self.logits:
             raise ValueError("no logits")
-        take = min(k, MAX_TOP_K, len(self.logits))
+        take = min(k, len(self.logits))
         top_ids = sorted(
             range(len(self.logits)),
             key=self.logits.__getitem__,

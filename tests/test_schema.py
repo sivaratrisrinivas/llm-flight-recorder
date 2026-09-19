@@ -13,7 +13,9 @@ from llmfr.core.schema import (
     TopKCandidate,
     Trace,
     dumps_json,
+    dumps_jsonl,
     loads_json,
+    loads_jsonl,
 )
 from llmfr.core.version import MAX_TOP_K, SCHEMA_VERSION
 from tests.factories import make_trace
@@ -161,3 +163,19 @@ def test_schema_models_are_frozen() -> None:
         trace.schema_version = "2.0.0"
     with pytest.raises(ValidationError, match="frozen"):
         event.sampled_token = "nope"
+
+
+def test_empty_json_trace_is_rejected() -> None:
+    with pytest.raises(ValueError, match="empty or truncated JSON trace"):
+        loads_json(" \n")
+
+
+def test_partial_json_trace_is_rejected() -> None:
+    with pytest.raises(ValueError, match="corrupt or partial JSON trace"):
+        loads_json('{"schema_version": "1.0.0"')
+
+
+def test_partial_jsonl_trace_is_rejected() -> None:
+    header = dumps_jsonl(make_trace()).splitlines()[0]
+    with pytest.raises(ValueError, match="corrupt or partial JSONL trace"):
+        loads_jsonl(header + "\n{not-json\n")

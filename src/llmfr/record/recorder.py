@@ -27,6 +27,7 @@ from llmfr.core.schema import (
     Trace,
 )
 from llmfr.core.version import DEFAULT_TOP_K, MAX_TOP_K, SCHEMA_VERSION
+from llmfr.privacy import Redactor
 from llmfr.record.sample import (
     LocalRNG,
     choose_token,
@@ -78,8 +79,15 @@ def record_generation(
     fmt: FormatName = "jsonl",
     source: str | None = "llmfr.record",
     tags: dict[str, str] | None = None,
+    persist: bool = True,
+    redact: Redactor | None = None,
 ) -> Trace:
-    """Run the decode loop, build a Trace, and optionally persist it."""
+    """Run the decode loop, build a Trace, and optionally persist it.
+
+    ``persist=True`` (default) writes to ``store`` when one is given.
+    ``persist=False`` skips the disk write even if ``store`` is passed.
+    ``redact`` runs after the Trace is built and before any write.
+    """
     _reject_unsupported(generation)
     if not adapter.capabilities.supports_logits:
         raise ValueError("recorder requires real next-token logits; refusing to invent them")
@@ -149,7 +157,9 @@ def record_generation(
         generation_config=effective_generation_config(generation),
         events=events,
     )
-    if store is not None:
+    if redact is not None:
+        trace = redact(trace)
+    if persist and store is not None:
         store.put(trace, fmt=fmt)
     return trace
 

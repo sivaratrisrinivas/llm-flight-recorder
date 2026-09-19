@@ -44,6 +44,12 @@ from llmfr.core import (
     loads_jsonl,
     migrate_payload,
 )
+from llmfr.privacy import (
+    DEFAULT_REDACT_FIELDS,
+    REDACTED,
+    Redactor,
+    redact_trace,
+)
 from llmfr.record import (
     RECORDER_PIPELINE,
     SAMPLING_STAGES,
@@ -67,6 +73,7 @@ from llmfr.storage import DuplicateTraceIdError, TraceIndexEntry, TracePathError
 
 __all__ = [
     "DEFAULT_HF_MODEL_ID",
+    "DEFAULT_REDACT_FIELDS",
     "DEFAULT_TOP_K",
     "MAX_TOP_K",
     "PORTFOLIO_DEMO_MODEL_ID",
@@ -80,11 +87,13 @@ __all__ = [
     "SAMPLING_STAGES",
     "LocalRNG",
     "RecordableAdapter",
+    "Redactor",
     "SampleDecision",
     "choose_token",
     "effective_generation_config",
     "is_greedy",
     "record_generation",
+    "redact_trace",
     "softmax",
     "BIT_IDENTICAL_CAVEAT",
     "ReplayResult",
@@ -97,6 +106,7 @@ __all__ = [
     "CompareResult",
     "compare_traces",
     "format_compare_result",
+    "REDACTED",
     "DuplicateTraceIdError",
     "TracePathError",
     "Environment",
