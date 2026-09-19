@@ -96,7 +96,7 @@ def compare_traces(trace_a: Trace, trace_b: Trace) -> CompareResult:
         event_count_a=len(trace_a.events),
         event_count_b=len(trace_b.events),
         likely_enabling_config=enabling,
-        enabling_summary=_enabling_summary(first, enabling),
+        enabling_summary=_enabling_summary(first, enabling, trace_a, trace_b),
     )
 
 
@@ -154,6 +154,11 @@ def _event_has_logit_float(event: Event) -> bool:
 
 def _both_lack_logit_floats(event_a: Event, event_b: Event) -> bool:
     return not _event_has_logit_float(event_a) and not _event_has_logit_float(event_b)
+
+
+def _captured_score_word(event_a: Event, event_b: Event) -> str:
+    """HF traces with logit floats stay 'logits'; logprob-only pairs are 'scores'."""
+    return "scores" if _both_lack_logit_floats(event_a, event_b) else "logits"
 
 
 def _prob_fields_differ(event_a: Event, event_b: Event) -> bool:
@@ -245,13 +250,17 @@ def _classify_first(
     if _decoding_config_differs(trace_a.generation_config, trace_b.generation_config) and (
         "sampled_token" in differences or "probabilities" in differences
     ):
+        score_word = _captured_score_word(event_a, event_b)
         return (
             "decoding config",
-            "captured logits match; temperature, do_sample, or other sampler settings differ",
+            (
+                f"captured {score_word} match; temperature, do_sample, "
+                "or other sampler settings differ"
+            ),
         )
 
     if "probabilities" in differences:
-        score_word = "scores" if _both_lack_logit_floats(event_a, event_b) else "logits"
+        score_word = _captured_score_word(event_a, event_b)
         return (
             "probability distribution",
             f"captured {score_word} and decoding config match; stored probabilities differ",
@@ -265,9 +274,10 @@ def _classify_first(
             )
         if _logits_uncomparable(trace_a, trace_b, event_a, event_b):
             return _classify_without_logits(trace_a, trace_b, differences)
+        score_word = _captured_score_word(event_a, event_b)
         return (
             "sampling",
-            "same context, captured logits, and decoding config; sampled tokens differ",
+            f"same context, captured {score_word}, and decoding config; sampled tokens differ",
         )
 
     return (
@@ -574,7 +584,10 @@ def _likely_enabling_config(
 
 
 def _enabling_summary(
-    first: FirstDivergence | None, enabling: tuple[ConfigDiff, ...]
+    first: FirstDivergence | None,
+    enabling: tuple[ConfigDiff, ...],
+    trace_a: Trace | None = None,
+    trace_b: Trace | None = None,
 ) -> str | None:
     if first is None:
         return None
@@ -614,8 +627,14 @@ def _enabling_summary(
             return "sampler settings likely enabled this first split"
         return "no recorded sampler config field explains the first split"
     if classification == "probability distribution":
+        score_word = "logits"
+        if trace_a is not None and trace_b is not None:
+            event_a = _event_at(trace_a, first.step)
+            event_b = _event_at(trace_b, first.step)
+            if event_a is not None and event_b is not None:
+                score_word = _captured_score_word(event_a, event_b)
         return (
-            "captured scores and decoding config match; "
+            f"captured {score_word} and decoding config match; "
             "stored probabilities differ without a named config cause"
         )
     if classification == "sampling":

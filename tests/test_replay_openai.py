@@ -10,9 +10,10 @@ from pytest import CaptureFixture
 from llmfr.cli import run
 from llmfr.compare import compare_traces
 from llmfr.core.format import format_inspect_step
-from llmfr.core.schema import dumps_json
+from llmfr.core.schema import GenerationConfig, dumps_json
 from llmfr.replay import replay_trace
 from llmfr.storage import TraceStore
+from tests.factories import TRACE_ID_B
 from tests.openai_fakes import alt_openai_trace, make_openai_trace
 
 
@@ -45,11 +46,49 @@ def test_compare_and_inspect_openai_logprob_traces() -> None:
     assert first.classification != "raw-logit"
     assert "sampled_token" in first.differences
     assert "raw_logits" not in first.differences
+    assert first.reason is not None
+    assert "captured scores" in first.reason
+    assert "captured logits" not in first.reason
     text = format_inspect_step(trace_a, 0)
     assert "He" in text
     assert "top-k" in text
     assert "logprob" in text
     assert "invented" not in text.lower()
+
+
+def test_openai_sampling_reason_says_scores_not_logits() -> None:
+    trace_a = make_openai_trace()
+    event0 = trace_a.events[0].model_copy(
+        update={"sampled_token_id": 109, "sampled_token": "No", "sampled_rank": 2}
+    )
+    trace_b = make_openai_trace(trace_id=TRACE_ID_B).model_copy(
+        update={"events": [event0, trace_a.events[1]]}
+    )
+    result = compare_traces(trace_a, trace_b)
+    first = result.first_divergence
+    assert first is not None
+    assert first.classification == "sampling"
+    assert first.reason is not None
+    assert "captured scores" in first.reason
+    assert "captured logits" not in first.reason
+
+
+def test_openai_decoding_config_reason_says_scores_not_logits() -> None:
+    trace_a = make_openai_trace()
+    event0 = trace_a.events[0].model_copy(
+        update={"sampled_token_id": 109, "sampled_token": "No", "sampled_rank": 2}
+    )
+    trace_b = make_openai_trace(
+        trace_id=TRACE_ID_B,
+        generation=GenerationConfig(temperature=1.5, max_new_tokens=8, do_sample=True),
+    ).model_copy(update={"events": [event0, trace_a.events[1]]})
+    result = compare_traces(trace_a, trace_b)
+    first = result.first_divergence
+    assert first is not None
+    assert first.classification == "decoding config"
+    assert first.reason is not None
+    assert first.reason.startswith("captured scores match")
+    assert "captured logits" not in first.reason
 
 
 def test_logprob_only_score_split_is_not_raw_logit() -> None:
@@ -78,7 +117,9 @@ def test_logprob_only_score_split_is_not_raw_logit() -> None:
     assert first.reason is not None
     assert "captured scores" in first.reason
     assert "captured logits" not in first.reason
-    assert "captured logits" not in (result.enabling_summary or "")
+    assert result.enabling_summary is not None
+    assert "captured scores" in result.enabling_summary
+    assert "captured logits" not in result.enabling_summary
 
 
 def test_cli_replay_openai_trace_fail_closed(tmp_path: Path, capsys: CaptureFixture[str]) -> None:
