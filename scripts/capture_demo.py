@@ -1,10 +1,14 @@
 """Record the portfolio demo traces and compare reports.
 
-Default path uses the live Hugging Face adapter (`sshleifer/tiny-gpt2` on
-CPU) through the public `llmfr` CLI. `--backend fake` never overwrites
-`examples/demo` (docs/demo.md and tests lock those files to tiny-gpt2).
-Pass `--out DIR` for a scratch fake-adapter capture that also writes inspect
-and an honest `SOURCE.txt`. Do not hand-edit logits into the fixtures.
+Default Hugging Face path uses `PORTFOLIO_DEMO_MODEL_ID` (Qwen2.5-0.5B-Instruct)
+at `PORTFOLIO_DEMO_MODEL_REVISION` through the public `llmfr` CLI. That download
+is not a CI step: pytest asserts against the checked-in JSONL. `--backend fake`
+never overwrites `examples/demo` (docs/demo.md and tests lock those files to the
+portfolio capture). Pass `--out DIR` for a scratch fake-adapter capture that
+also writes inspect and an honest `SOURCE.txt`. Do not hand-edit logits into
+the fixtures.
+
+CI/smoke `llmfr record` without `--model` still loads `sshleifer/tiny-gpt2`.
 """
 
 from __future__ import annotations
@@ -17,6 +21,11 @@ import tempfile
 from collections.abc import Sequence
 from pathlib import Path
 
+from llmfr.adapters.huggingface import (
+    DEFAULT_HF_MODEL_ID,
+    PORTFOLIO_DEMO_MODEL_ID,
+    PORTFOLIO_DEMO_MODEL_REVISION,
+)
 from llmfr.core.schema import GenerationConfig, dumps_jsonl, load_path
 from llmfr.record import record_generation
 
@@ -28,11 +37,16 @@ from tests.fakes import FakeCausalLMAdapter  # noqa: E402
 
 DEMO_DIR = ROOT / "examples" / "demo"
 
-PROMPT = "Hello"
-MAX_NEW_TOKENS = 6
+PROMPT = (
+    "A farmer has 17 sheep. All but 9 run away. "
+    "How many sheep are left? Think step by step, then give the final number."
+)
+MAX_NEW_TOKENS = 16
 DEMO1_SEEDS = (1, 2)
 DEMO2_SEED = 1
 DEMO2_TEMPERATURES = (0.7, 1.2)
+SMOKE_PROMPT = "Hello"
+SMOKE_MAX_NEW_TOKENS = 6
 
 _COMPARE_EXIT = frozenset({0, 1})
 _OK_EXIT = frozenset({0})
@@ -98,18 +112,29 @@ def _store_path(store_root: Path, trace_id: str) -> Path:
     raise FileNotFoundError(f"recorded trace not found: {trace_id}")
 
 
-def _write_source(out: Path, *, backend: str, model: str, revision: str | None) -> None:
+def _write_source(
+    out: Path,
+    *,
+    backend: str,
+    model: str,
+    revision: str | None,
+    prompt: str,
+    max_new_tokens: int,
+) -> None:
     out.mkdir(parents=True, exist_ok=True)
     revision_line = "" if revision is None else f"revision={revision}\n"
     (out / "SOURCE.txt").write_text(
         f"backend={backend}\n"
         f"model={model}\n"
         f"{revision_line}"
-        f"prompt={PROMPT!r}\n"
-        f"max_new_tokens={MAX_NEW_TOKENS}\n"
+        f"prompt={prompt!r}\n"
+        f"max_new_tokens={max_new_tokens}\n"
         f"demo1_seeds={DEMO1_SEEDS[0]} {DEMO1_SEEDS[1]}\n"
         f"demo2_seed={DEMO2_SEED} temperatures={DEMO2_TEMPERATURES[0]} "
-        f"{DEMO2_TEMPERATURES[1]}\n",
+        f"{DEMO2_TEMPERATURES[1]}\n"
+        f"ci_smoke_default={DEFAULT_HF_MODEL_ID}\n"
+        f"ci_smoke_prompt={SMOKE_PROMPT!r}\n"
+        f"ci_smoke_max_new_tokens={SMOKE_MAX_NEW_TOKENS}\n",
         encoding="utf-8",
     )
 
@@ -153,6 +178,10 @@ def capture_hf(out: Path = DEMO_DIR) -> str:
                     str(seed),
                     "--temperature",
                     str(temperature),
+                    "--model",
+                    PORTFOLIO_DEMO_MODEL_ID,
+                    "--revision",
+                    PORTFOLIO_DEMO_MODEL_REVISION,
                 ),
                 name="record",
                 allowed=_OK_EXIT,
@@ -172,6 +201,8 @@ def capture_hf(out: Path = DEMO_DIR) -> str:
             backend="huggingface",
             model=loaded.model.name,
             revision=loaded.model.revision,
+            prompt=PROMPT,
+            max_new_tokens=MAX_NEW_TOKENS,
         )
         return reports
 
@@ -180,7 +211,7 @@ def capture_fake(out: Path) -> str:
     if _docs_bound(out):
         raise RuntimeError(
             "refusing to overwrite docs-bound captures in examples/demo; "
-            "those are sshleifer/tiny-gpt2 CLI traces used by docs/demo.md"
+            "those are portfolio Hugging Face CLI traces used by docs/demo.md"
         )
     demo1_a = record_generation(
         _flat_adapter(),
@@ -240,7 +271,14 @@ def capture_fake(out: Path) -> str:
     dest_2a.write_text(dumps_jsonl(demo2_a), encoding="utf-8")
     dest_2b.write_text(dumps_jsonl(demo2_b), encoding="utf-8")
     reports = _write_cli_reports(out, dest_1a, dest_1b, dest_2a, dest_2b)
-    _write_source(out, backend="fake", model="fake-lm", revision=None)
+    _write_source(
+        out,
+        backend="fake",
+        model="fake-lm",
+        revision=None,
+        prompt=PROMPT,
+        max_new_tokens=MAX_NEW_TOKENS,
+    )
     return reports
 
 
@@ -250,7 +288,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         "--backend",
         choices=("hf", "fake"),
         default="hf",
-        help="hf: live sshleifer/tiny-gpt2 via the CLI. fake: in-repo adapter.",
+        help=(
+            "hf: live portfolio model via the CLI (not CI). "
+            "fake: in-repo adapter."
+        ),
     )
     parser.add_argument(
         "--out",

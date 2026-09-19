@@ -1,7 +1,10 @@
 backend=huggingface
-model=sshleifer/tiny-gpt2
-revision=5f91d94bd9cd7190a9f3216ff93cd1dd95f2c7be
-prompt='Hello'
-max_new_tokens=6
+model=Qwen/Qwen2.5-0.5B-Instruct
+revision=7ae557604adf67be50417f59c2c2f167def9a775
+prompt='A farmer has 17 sheep. All but 9 run away. How many sheep are left? Think step by step, then give the final number.'
+max_new_tokens=16
 demo1_seeds=1 2
 demo2_seed=1 temperatures=0.7 1.2
+ci_smoke_default=sshleifer/tiny-gpt2
+ci_smoke_prompt='Hello'
+ci_smoke_max_new_tokens=6

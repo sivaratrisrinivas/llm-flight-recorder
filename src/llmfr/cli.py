@@ -230,6 +230,13 @@ def record(
             ),
         ),
     ] = None,
+    revision: Annotated[
+        str | None,
+        typer.Option(
+            "--revision",
+            help="Hub commit SHA to pin. Default: resolve after download.",
+        ),
+    ] = None,
     capture_k: Annotated[
         int,
         typer.Option("--capture-k", help="Top-k candidates stored per step (not full vocab)."),
@@ -279,6 +286,7 @@ def record(
             greedy=greedy,
             model=model,
             provider=provider,
+            revision=revision,
             capture_k=capture_k,
             max_visible_tokens=max_visible_tokens,
             fmt=fmt,
@@ -379,6 +387,7 @@ def _cmd_record(
     greedy: bool,
     model: str | None,
     provider: str | None,
+    revision: str | None,
     capture_k: int,
     max_visible_tokens: int | None,
     fmt: Literal["json", "jsonl"],
@@ -389,6 +398,7 @@ def _cmd_record(
         adapter = _build_record_adapter(
             model_id=model,
             provider=provider,
+            revision=revision,
             max_visible_tokens=max_visible_tokens,
             capture_k=capture_k,
         )
@@ -520,9 +530,14 @@ def _build_record_adapter(
     provider: str | None,
     max_visible_tokens: int | None,
     capture_k: int,
+    revision: str | None = None,
 ) -> HuggingFaceCausalLMAdapter | OpenAIChatAdapter:
     backend = resolve_record_provider(provider, model_id)
     if backend == "openai":
+        if revision is not None:
+            raise ValueError(
+                "--revision pins a Hugging Face Hub commit; omit it for OpenAI"
+            )
         return _build_openai_adapter(
             model_id=model_id,
             max_visible_tokens=max_visible_tokens,
@@ -530,6 +545,7 @@ def _build_record_adapter(
         )
     return _build_hf_adapter(
         model_id=model_id,
+        revision=revision,
         max_visible_tokens=max_visible_tokens,
     )
 
@@ -538,9 +554,11 @@ def _build_hf_adapter(
     *,
     model_id: str | None,
     max_visible_tokens: int | None,
+    revision: str | None = None,
 ) -> HuggingFaceCausalLMAdapter:
     return HuggingFaceCausalLMAdapter(
         DEFAULT_HF_MODEL_ID if model_id is None else model_id,
+        revision=revision,
         device="cpu",
         max_visible_tokens=max_visible_tokens,
     )

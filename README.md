@@ -61,31 +61,32 @@ pip install --index-url https://download.pytorch.org/whl/cpu torch
 pip install --upgrade-strategy only-if-needed -e ".[dev,hf]"
 ```
 
-Default model is `sshleifer/tiny-gpt2`. Store directory defaults to `.llmfr`. Record twice, then compare:
+Default model is `sshleifer/tiny-gpt2` (CI/smoke). Store directory defaults to `.llmfr`. Omit `--model` to keep that smoke path. Portfolio Demo 1/2 use `Qwen/Qwen2.5-0.5B-Instruct` at Hub commit `7ae557604adf67be50417f59c2c2f167def9a775` and a reasoning prompt (real scores, not invented):
 
 ```bash
-A=$(llmfr record "Hello" --store .llmfr --max-new-tokens 6 --seed 1)
-B=$(llmfr record "Hello" --store .llmfr --max-new-tokens 6 --seed 2)
+PROMPT="A farmer has 17 sheep. All but 9 run away. How many sheep are left? Think step by step, then give the final number."
+A=$(llmfr record "$PROMPT" --model Qwen/Qwen2.5-0.5B-Instruct --revision 7ae557604adf67be50417f59c2c2f167def9a775 --store .llmfr --max-new-tokens 16 --seed 1)
+B=$(llmfr record "$PROMPT" --model Qwen/Qwen2.5-0.5B-Instruct --revision 7ae557604adf67be50417f59c2c2f167def9a775 --store .llmfr --max-new-tokens 16 --seed 2)
 llmfr compare "$A" "$B" --store .llmfr
 ```
 
-That is Demo 1: same prompt, different `--seed`. Compare names the first split; later token, context, and logit diffs are downstream, not a second root cause. Captured `sshleifer/tiny-gpt2` report (real scores, not invented):
+That is Demo 1: same prompt, different `--seed`. One path starts "To determine how many sheep are left"; the other starts "Step 1: Identify the initial number of sheep." Compare names the first split; later token, context, and logit diffs are downstream, not a second root cause.
 
 ```
-compare a=7d2b9710-9131-470d-abf8-91cb5374b155 b=51594c38-fe66-4436-8bb3-bb41e39dfaf3
+compare a=c9276fdb-be8b-4470-9b4a-d19c3ae7e589 b=d8ee1917-67f3-4b39-8cd4-f0acc7a60cdc
 
 CONFIG DIFFERENCE
   generation_config.seed: 1 vs 2
 
 EXECUTION
-  recorded length: 6 vs 6 steps
+  recorded length: 16 vs 16 steps
   same steps: (none; paths split at step 0)
 
 FIRST BEHAVIORAL DIVERGENCE
   step 0
   class: sampling
   differences: sampled_token
-  sampled token: 'ether' (id=6750) vs ' titan' (id=48047)
+  sampled token: ' To' (id=2014) vs ' Step' (id=14822)
   reason: same context, captured logits, and decoding config; sampled tokens differ
 
 LIKELY ENABLING CONFIG
@@ -94,11 +95,21 @@ LIKELY ENABLING CONFIG
 
 Steps 1+: downstream effects
   later context, logit, and token diffs are not a new root cause
-  step 1 (not root cause): full_history, model_visible_context, raw_logits, probabilities, sampled_token ('IENCE' (id=42589) vs ' humankind' (id=47634))
-  step 2 (not root cause): full_history, model_visible_context, raw_logits, probabilities, sampled_token ('otomy' (id=38385) vs ' Mich' (id=2843))
-  step 3 (not root cause): full_history, model_visible_context, raw_logits, probabilities, sampled_token (' Naz' (id=12819) vs 'ios' (id=4267))
-  step 4 (not root cause): full_history, model_visible_context, raw_logits, probabilities, sampled_token ('pex' (id=24900) vs ' ascending' (id=41988))
-  step 5 (not root cause): full_history, model_visible_context, raw_logits, probabilities, sampled_token (' peas' (id=22589) vs ' Bust' (id=36988))
+  step 1 (not root cause): full_history, model_visible_context, raw_logits, probabilities, sampled_token (' determine' (id=8253) vs ' ' (id=220))
+  step 2 (not root cause): full_history, model_visible_context, raw_logits, probabilities, sampled_token (' how' (id=1246) vs '1' (id=16))
+  step 3 (not root cause): full_history, model_visible_context, raw_logits, probabilities, sampled_token (' many' (id=1657) vs ':' (id=25))
+  step 4 (not root cause): full_history, model_visible_context, raw_logits, probabilities, sampled_token (' sheep' (id=31912) vs ' Identify' (id=64547))
+  step 5 (not root cause): full_history, model_visible_context, raw_logits, probabilities, sampled_token (' are' (id=525) vs ' the' (id=279))
+  step 6 (not root cause): full_history, model_visible_context, raw_logits, probabilities, sampled_token (' left' (id=2115) vs ' initial' (id=2856))
+  step 7 (not root cause): full_history, model_visible_context, raw_logits, probabilities, sampled_token (' after' (id=1283) vs ' number' (id=1372))
+  step 8 (not root cause): full_history, model_visible_context, raw_logits, probabilities, sampled_token (' all' (id=678) vs ' of' (id=315))
+  step 9 (not root cause): full_history, model_visible_context, raw_logits, probabilities, sampled_token (' but' (id=714) vs ' sheep' (id=31912))
+  step 10 (not root cause): full_history, model_visible_context, raw_logits, probabilities, sampled_token (' ' (id=220) vs '.\n' (id=624))
+  step 11 (not root cause): full_history, model_visible_context, raw_logits, probabilities, sampled_token ('9' (id=24) vs 'The' (id=785))
+  step 12 (not root cause): full_history, model_visible_context, raw_logits, probabilities, sampled_token (' run' (id=1598) vs ' farmer' (id=36400))
+  step 13 (not root cause): full_history, model_visible_context, raw_logits, probabilities, sampled_token (' away' (id=3123) vs ' starts' (id=8471))
+  step 14 (not root cause): full_history, model_visible_context, raw_logits, probabilities, sampled_token (',' (id=11) vs ' with' (id=448))
+  step 15 (not root cause): full_history, model_visible_context, raw_logits, probabilities, sampled_token (' we' (id=582) vs ' a' (id=264))
 
 notes
   Later context and logit diffs are downstream of the first divergence, not a new root cause.
@@ -109,26 +120,26 @@ diverged
 Demo 2 keeps the seed and changes temperature:
 
 ```bash
-C=$(llmfr record "Hello" --store .llmfr --max-new-tokens 6 --seed 1 --temperature 0.7)
-D=$(llmfr record "Hello" --store .llmfr --max-new-tokens 6 --seed 1 --temperature 1.2)
+C=$(llmfr record "$PROMPT" --model Qwen/Qwen2.5-0.5B-Instruct --revision 7ae557604adf67be50417f59c2c2f167def9a775 --store .llmfr --max-new-tokens 16 --seed 1 --temperature 0.7)
+D=$(llmfr record "$PROMPT" --model Qwen/Qwen2.5-0.5B-Instruct --revision 7ae557604adf67be50417f59c2c2f167def9a775 --store .llmfr --max-new-tokens 16 --seed 1 --temperature 1.2)
 llmfr compare "$C" "$D" --store .llmfr
 ```
 
-First split is `decoding config`, not a second sampling root cause:
+First eight sampled tokens still match. The first split is `decoding config` (`all but 9 run away` vs `the 9 sheep run off`), not a second sampling root cause:
 
 ```
 CONFIG DIFFERENCE
   generation_config.temperature: 0.7 vs 1.2
 
 EXECUTION
-  recorded length: 6 vs 6 steps
-  same steps: (none; paths split at step 0)
+  recorded length: 16 vs 16 steps
+  same steps: 0-7 (sampled tokens, model-visible context, captured logits still match)
 
 FIRST BEHAVIORAL DIVERGENCE
-  step 0
+  step 8
   class: decoding config
   differences: sampled_token
-  sampled token: 'ician' (id=6749) vs 'ether' (id=6750)
+  sampled token: ' all' (id=678) vs ' the' (id=279)
   reason: captured logits match; temperature, do_sample, or other sampler settings differ
 ```
 

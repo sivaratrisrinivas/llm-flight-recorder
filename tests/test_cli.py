@@ -281,6 +281,8 @@ def test_cli_record_replay_compare_help(capsys: CaptureFixture[str]) -> None:
     assert "API request field" in record_help
     assert "openai:" in record_help
     assert "looks like an API name" not in record_help
+    assert "--model" in record_help
+    assert "--revision" in record_help
 
 
 def test_cli_record_twice_then_compare_identical(

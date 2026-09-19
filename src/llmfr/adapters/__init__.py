@@ -8,6 +8,7 @@ from llmfr.adapters.base import (
 from llmfr.adapters.huggingface import (
     DEFAULT_HF_MODEL_ID,
     PORTFOLIO_DEMO_MODEL_ID,
+    PORTFOLIO_DEMO_MODEL_REVISION,
     HuggingFaceCausalLMAdapter,
     HuggingFaceExtraMissingError,
 )
@@ -30,6 +31,7 @@ __all__ = [
     "OPENAI_KEY_ENV",
     "OPENAI_MAX_TOP_LOGPROBS",
     "PORTFOLIO_DEMO_MODEL_ID",
+    "PORTFOLIO_DEMO_MODEL_REVISION",
     "AdapterCapabilities",
     "HostedCompletion",
     "HostedTokenStep",
