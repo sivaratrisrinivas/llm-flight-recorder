@@ -124,11 +124,13 @@ class TraceStore:
             raise FileNotFoundError(
                 f"trace file missing from store: {entry.relpath} (trace_id {trace_id})"
             )
-        text = path.read_text(encoding="utf-8")
         try:
+            text = path.read_text(encoding="utf-8")
             if entry.format == "jsonl":
                 return loads_jsonl(text)
             return loads_json(text)
+        except OSError:
+            raise
         except (TypeError, ValueError, json.JSONDecodeError) as exc:
             raise ValueError(
                 f"corrupt or partial trace file: {entry.relpath} (trace_id {trace_id}): {exc}"

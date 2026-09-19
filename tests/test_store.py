@@ -151,6 +151,16 @@ def test_get_corrupt_trace_file(tmp_path: Path) -> None:
         store.get(str(trace.run_metadata.trace_id))
 
 
+def test_get_non_utf8_trace_file_is_corrupt(tmp_path: Path) -> None:
+    store = TraceStore(tmp_path)
+    trace = make_trace()
+    path = store.put(trace, fmt="jsonl")
+    path.write_bytes(b"\xff\xfe not utf-8")
+    with pytest.raises(ValueError, match="corrupt or partial trace file") as excinfo:
+        store.get(str(trace.run_metadata.trace_id))
+    assert isinstance(excinfo.value.__cause__, UnicodeDecodeError)
+
+
 def test_get_permission_error_is_not_corrupt(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
