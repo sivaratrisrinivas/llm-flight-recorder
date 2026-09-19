@@ -9,6 +9,12 @@ from types import ModuleType
 
 import pytest
 
+from llmfr.adapters.huggingface import (
+    DEFAULT_HF_MODEL_ID,
+    PORTFOLIO_DEMO_MODEL_ID,
+    PORTFOLIO_DEMO_MODEL_REVISION,
+)
+
 REPO = Path(__file__).resolve().parents[1]
 SCRIPT = REPO / "scripts" / "capture_demo.py"
 DEMO_DIR = REPO / "examples" / "demo"
@@ -20,6 +26,18 @@ def _load_script() -> ModuleType:
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
+
+
+def test_capture_demo_hf_pins_portfolio_model_not_ci_default() -> None:
+    script = _load_script()
+    assert script.PORTFOLIO_DEMO_MODEL_ID == PORTFOLIO_DEMO_MODEL_ID
+    assert script.DEFAULT_HF_MODEL_ID == DEFAULT_HF_MODEL_ID
+    assert script.PORTFOLIO_DEMO_MODEL_ID != script.DEFAULT_HF_MODEL_ID
+    assert script.PORTFOLIO_DEMO_MODEL_REVISION == PORTFOLIO_DEMO_MODEL_REVISION
+    assert "Think step by step" in script.PROMPT
+    assert script.SMOKE_PROMPT == "Hello"
+    assert script.SMOKE_MAX_NEW_TOKENS == 6
+    assert script.MAX_NEW_TOKENS == 16
 
 
 def test_fake_backend_refuses_docs_bound_dir(capsys: pytest.CaptureFixture[str]) -> None:
@@ -37,6 +55,7 @@ def test_fake_backend_refuses_docs_bound_dir(capsys: pytest.CaptureFixture[str])
     assert (DEMO_DIR / "SOURCE.txt").read_text(encoding="utf-8") == source_before
     assert (DEMO_DIR / "demo1_inspect_step0.txt").read_text(encoding="utf-8") == inspect_before
     assert "backend=huggingface" in source_before
+    assert PORTFOLIO_DEMO_MODEL_ID in source_before
 
 
 def test_fake_backend_scratch_out_writes_inspect(tmp_path: Path) -> None:

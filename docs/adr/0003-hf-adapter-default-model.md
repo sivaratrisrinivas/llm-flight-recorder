@@ -24,10 +24,15 @@ because tiny-gpt2 (2 layers, 2 heads, embedding size 2) is only a smoke test.
    `next_token_logits` on that model. They may mark the download as slow.
    They must not substitute a canned logit vector.
 
-2. **Portfolio demo:** `distilbert/distilgpt2`  
-   Constant: `PORTFOLIO_DEMO_MODEL_ID`. DistilGPT2 is a real English causal
-   LM that still runs short prompts on CPU. Demo scripts should pass
-   `model_id=PORTFOLIO_DEMO_MODEL_ID` explicitly. Tests do not download it.
+2. **Portfolio demo:** ungated `Qwen/Qwen2.5-0.5B-Instruct`  
+   Constants: `PORTFOLIO_DEMO_MODEL_ID` and `PORTFOLIO_DEMO_MODEL_REVISION`
+   (`7ae557604adf67be50417f59c2c2f167def9a775`). This 0.5B instruct
+   checkpoint produces readable English on a short reasoning prompt on CPU.
+   Demo scripts pass `--model` and `--revision` explicitly. Tests assert
+   against checked-in `examples/demo` traces and do not download these
+   weights. `meta-llama/Llama-3.2-1B-Instruct` was preferred for a 1B-class
+   demo; that Hub repo is gated and the capture environment had no
+   `HF_TOKEN` (HTTP 401 / `GatedRepoError`), so Llama was not recorded.
 
 3. **Install:** torch and transformers live in the optional extra `hf`. A
    core `pip install llmfr` (M1 schema and storage) stays free of those
@@ -64,7 +69,8 @@ fill zeros or a uniform distribution to look like a local model.
 
 ## Consequences
 
-- Default constructor is CI-safe. Demos opt into DistilGPT2.
+- Default constructor is CI-safe. Demos opt into Qwen2.5-0.5B-Instruct at a
+  pinned Hub SHA. CI must not fetch those weights.
 - A recorded M2/M3 trace can name the exact Hub commit, so a later replay
   is not chasing `main`.
 - M3 can feed `StepLogits.logits` into top-k `Event` rows without changing
@@ -76,6 +82,13 @@ fill zeros or a uniform distribution to look like a local model.
 
 - Default to `gpt2` (124M): better text, slower CI, still CPU-possible.
   Rejected as the implicit default; testers can pass `model_id="gpt2"`.
+- Portfolio `distilbert/distilgpt2`: English completion, not an instruct
+  reasoning path. Replaced by `Qwen/Qwen2.5-0.5B-Instruct` for the
+  checked-in Demo 1/2 captures.
+- Portfolio `meta-llama/Llama-3.2-1B-Instruct`: preferred 1B-class instruct
+  demo. Not used: the Hub repo is gated, and the capture environment had
+  no `HF_TOKEN` (HTTP 401 / `GatedRepoError` on tokenizer and weights).
+  Ungated Qwen 0.5B is the accepted portfolio capture.
 - Vendor a numpy dump of tiny-gpt2 logits in the repo: avoids the Hub, but
   is exactly the fake-logits path this project forbids.
 - Require CUDA: fails this environment and GitHub-hosted runners.

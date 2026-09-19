@@ -11,7 +11,8 @@ from llmfr.adapters.base import AdapterCapabilities, StepLogits
 from llmfr.core.schema import Environment, ModelConfig
 
 DEFAULT_HF_MODEL_ID = "sshleifer/tiny-gpt2"
-PORTFOLIO_DEMO_MODEL_ID = "distilbert/distilgpt2"
+PORTFOLIO_DEMO_MODEL_ID = "Qwen/Qwen2.5-0.5B-Instruct"
+PORTFOLIO_DEMO_MODEL_REVISION = "7ae557604adf67be50417f59c2c2f167def9a775"
 
 _HF_CAPABILITIES = AdapterCapabilities(
     supports_logits=True,

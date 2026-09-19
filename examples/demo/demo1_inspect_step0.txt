@@ -1,23 +1,23 @@
-trace 7d2b9710-9131-470d-abf8-91cb5374b155  step 0 of 6
+trace c9276fdb-be8b-4470-9b4a-d19c3ae7e589  step 0 of 16
 
 sampled token
-  'ether' (id=6750)
-  rank=17556  logit= 0.0107  prob= 0.0000  logprob=-10.8146
+  ' To' (id=2014)
+  rank=1  logit= 18.7956  prob= 0.5313  logprob=-0.6325
 
 full_history
-  tokens=1  truncated=false
-  ids=[15496]
-  text='Hello'
+  tokens=32  truncated=false
+  ids=[32, 36400, 702, 220, 16, 22, 31912, 13, 2009, 714, 220, 24, 1598, 3123, 13, 2585, 1657, 31912, 525, 2115, 30, 21149, 3019, 553, 3019, 11, 1221, 2968, 279, 1590, 1372, 13]
+  text='A farmer has 17 sheep. All but 9 run away. How many sheep are left? Think step by step, then give the final number.'
 
 model_visible_context
-  tokens=1  truncated=false
-  ids=[15496]
-  text='Hello'
+  tokens=32  truncated=false
+  ids=[32, 36400, 702, 220, 16, 22, 31912, 13, 2009, 714, 220, 24, 1598, 3123, 13, 2585, 1657, 31912, 525, 2115, 30, 21149, 3019, 553, 3019, 11, 1221, 2968, 279, 1590, 1372, 13]
+  text='A farmer has 17 sheep. All but 9 run away. How many sheep are left? Think step by step, then give the final number.'
   equals full_history (model saw the full prefix)
 
 top-k
-   1. ' stairs'        id=16046     logit= 0.1269  prob= 0.0000  logprob=-10.6985
-   2. ' vendors'       id=17192     logit= 0.1252  prob= 0.0000  logprob=-10.7001
-   3. ' intermittent'  id=38361     logit= 0.1149  prob= 0.0000  logprob=-10.7104
-   4. ' hauled'        id=43423     logit= 0.1079  prob= 0.0000  logprob=-10.7174
-   5. ' Brew'          id=9702      logit= 0.1065  prob= 0.0000  logprob=-10.7188
+ * 1. ' To'            id=2014      logit= 18.7956  prob= 0.5313  logprob=-0.6325
+   2. ' Let'           id=6771      logit= 17.6427  prob= 0.1677  logprob=-1.7854
+   3. ' Step'          id=14822     logit= 17.2073  prob= 0.1085  logprob=-2.2207
+   4. ' First'         id=5512      logit= 16.1834  prob= 0.0390  logprob=-3.2447
+   5. ' The'           id=576       logit= 16.1077  prob= 0.0361  logprob=-3.3204

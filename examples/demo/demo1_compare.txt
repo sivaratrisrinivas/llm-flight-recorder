@@ -1,17 +1,17 @@
-compare a=7d2b9710-9131-470d-abf8-91cb5374b155 b=51594c38-fe66-4436-8bb3-bb41e39dfaf3
+compare a=c9276fdb-be8b-4470-9b4a-d19c3ae7e589 b=d8ee1917-67f3-4b39-8cd4-f0acc7a60cdc
 
 CONFIG DIFFERENCE
   generation_config.seed: 1 vs 2
 
 EXECUTION
-  recorded length: 6 vs 6 steps
+  recorded length: 16 vs 16 steps
   same steps: (none; paths split at step 0)
 
 FIRST BEHAVIORAL DIVERGENCE
   step 0
   class: sampling
   differences: sampled_token
-  sampled token: 'ether' (id=6750) vs ' titan' (id=48047)
+  sampled token: ' To' (id=2014) vs ' Step' (id=14822)
   reason: same context, captured logits, and decoding config; sampled tokens differ
 
 LIKELY ENABLING CONFIG
@@ -20,11 +20,21 @@ LIKELY ENABLING CONFIG
 
 Steps 1+: downstream effects
   later context, logit, and token diffs are not a new root cause
-  step 1 (not root cause): full_history, model_visible_context, raw_logits, probabilities, sampled_token ('IENCE' (id=42589) vs ' humankind' (id=47634))
-  step 2 (not root cause): full_history, model_visible_context, raw_logits, probabilities, sampled_token ('otomy' (id=38385) vs ' Mich' (id=2843))
-  step 3 (not root cause): full_history, model_visible_context, raw_logits, probabilities, sampled_token (' Naz' (id=12819) vs 'ios' (id=4267))
-  step 4 (not root cause): full_history, model_visible_context, raw_logits, probabilities, sampled_token ('pex' (id=24900) vs ' ascending' (id=41988))
-  step 5 (not root cause): full_history, model_visible_context, raw_logits, probabilities, sampled_token (' peas' (id=22589) vs ' Bust' (id=36988))
+  step 1 (not root cause): full_history, model_visible_context, raw_logits, probabilities, sampled_token (' determine' (id=8253) vs ' ' (id=220))
+  step 2 (not root cause): full_history, model_visible_context, raw_logits, probabilities, sampled_token (' how' (id=1246) vs '1' (id=16))
+  step 3 (not root cause): full_history, model_visible_context, raw_logits, probabilities, sampled_token (' many' (id=1657) vs ':' (id=25))
+  step 4 (not root cause): full_history, model_visible_context, raw_logits, probabilities, sampled_token (' sheep' (id=31912) vs ' Identify' (id=64547))
+  step 5 (not root cause): full_history, model_visible_context, raw_logits, probabilities, sampled_token (' are' (id=525) vs ' the' (id=279))
+  step 6 (not root cause): full_history, model_visible_context, raw_logits, probabilities, sampled_token (' left' (id=2115) vs ' initial' (id=2856))
+  step 7 (not root cause): full_history, model_visible_context, raw_logits, probabilities, sampled_token (' after' (id=1283) vs ' number' (id=1372))
+  step 8 (not root cause): full_history, model_visible_context, raw_logits, probabilities, sampled_token (' all' (id=678) vs ' of' (id=315))
+  step 9 (not root cause): full_history, model_visible_context, raw_logits, probabilities, sampled_token (' but' (id=714) vs ' sheep' (id=31912))
+  step 10 (not root cause): full_history, model_visible_context, raw_logits, probabilities, sampled_token (' ' (id=220) vs '.\n' (id=624))
+  step 11 (not root cause): full_history, model_visible_context, raw_logits, probabilities, sampled_token ('9' (id=24) vs 'The' (id=785))
+  step 12 (not root cause): full_history, model_visible_context, raw_logits, probabilities, sampled_token (' run' (id=1598) vs ' farmer' (id=36400))
+  step 13 (not root cause): full_history, model_visible_context, raw_logits, probabilities, sampled_token (' away' (id=3123) vs ' starts' (id=8471))
+  step 14 (not root cause): full_history, model_visible_context, raw_logits, probabilities, sampled_token (',' (id=11) vs ' with' (id=448))
+  step 15 (not root cause): full_history, model_visible_context, raw_logits, probabilities, sampled_token (' we' (id=582) vs ' a' (id=264))
 
 notes
   Later context and logit diffs are downstream of the first divergence, not a new root cause.

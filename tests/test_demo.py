@@ -6,6 +6,11 @@ from pathlib import Path
 
 from pytest import CaptureFixture
 
+from llmfr.adapters.huggingface import (
+    DEFAULT_HF_MODEL_ID,
+    PORTFOLIO_DEMO_MODEL_ID,
+    PORTFOLIO_DEMO_MODEL_REVISION,
+)
 from llmfr.cli import run
 from llmfr.core.schema import load_path
 
@@ -88,10 +93,16 @@ def test_readme_is_what_why_how_essentials_only() -> None:
     assert demo2_excerpt in text
     assert demo2_excerpt in demo2
     assert "class: sampling" in text
-    assert "sampled token: 'ether' (id=6750) vs ' titan' (id=48047)" in text
-    assert "step 1 (not root cause)" in text
     assert "class: decoding config" in text
-    assert "sampled token: 'ician' (id=6749) vs 'ether' (id=6750)" in text
+    assert "step 1 (not root cause)" in text
+    assert DEFAULT_HF_MODEL_ID in text
+    assert "CI/smoke" in text
+    assert PORTFOLIO_DEMO_MODEL_ID in text
+    assert PORTFOLIO_DEMO_MODEL_REVISION in text
+    assert "ungated" in text
+    assert "Llama-3.2-1B-Instruct" in text
+    assert "HF_TOKEN" in text
+    assert "Think step by step" in text
 
 
 def test_demo_markdown_embeds_captured_reports() -> None:
@@ -108,18 +119,26 @@ def test_demo_markdown_embeds_captured_reports() -> None:
     for path in ADR_LINKS:
         assert path in demo
     assert "does not invent" in demo.lower() or "not invented" in demo.lower()
+    assert "ungated" in demo
+    assert "Llama-3.2-1B-Instruct" in demo
+    assert "gated" in demo
+    assert "HF_TOKEN" in demo
     source = (CAPTURES / "SOURCE.txt").read_text(encoding="utf-8")
     assert "backend=huggingface" in source
-    assert "sshleifer/tiny-gpt2" in source
-    assert "5f91d94bd9cd7190a9f3216ff93cd1dd95f2c7be" in source
+    assert PORTFOLIO_DEMO_MODEL_ID in source
+    assert PORTFOLIO_DEMO_MODEL_REVISION in source
+    assert DEFAULT_HF_MODEL_ID in source
+    assert "Think step by step" in source
+    assert "ci_smoke_default=" + DEFAULT_HF_MODEL_ID in source
 
 
-def test_fixtures_are_tiny_gpt2_with_real_logits() -> None:
+def test_fixtures_are_portfolio_qwen_with_real_logits() -> None:
     for name in ("demo1_a.jsonl", "demo1_b.jsonl", "demo2_a.jsonl", "demo2_b.jsonl"):
         trace = load_path(FIXTURES / name)
-        assert trace.model.name == "sshleifer/tiny-gpt2"
-        assert trace.model.revision == "5f91d94bd9cd7190a9f3216ff93cd1dd95f2c7be"
+        assert trace.model.name == PORTFOLIO_DEMO_MODEL_ID
+        assert trace.model.revision == PORTFOLIO_DEMO_MODEL_REVISION
         assert trace.run_metadata.logits.mode == "topk"
+        assert "Think step by step" in trace.run_metadata.prompt
         assert trace.events
         for event in trace.events:
             assert event.sampled_logit is not None

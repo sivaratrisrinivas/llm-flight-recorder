@@ -1,30 +1,32 @@
-compare a=94b4c5ea-08c7-48d5-8848-5d90df0d610c b=000982fd-cbfb-4ad1-8711-8c5edb6f9d7c
+compare a=90c53473-a255-4df4-b4b6-0062b98f6971 b=bb1d2ce9-506b-49e3-b873-44419c18b41b
 
 CONFIG DIFFERENCE
   generation_config.temperature: 0.7 vs 1.2
 
 EXECUTION
-  recorded length: 6 vs 6 steps
-  same steps: (none; paths split at step 0)
+  recorded length: 16 vs 16 steps
+  same steps: 0-7 (sampled tokens, model-visible context, captured logits still match)
 
 FIRST BEHAVIORAL DIVERGENCE
-  step 0
+  step 8
   class: decoding config
   differences: sampled_token
-  sampled token: 'ician' (id=6749) vs 'ether' (id=6750)
+  sampled token: ' all' (id=678) vs ' the' (id=279)
   reason: captured logits match; temperature, do_sample, or other sampler settings differ
 
 LIKELY ENABLING CONFIG
   generation_config.temperature: 0.7 vs 1.2
   sampler settings likely enabled this first split
 
-Steps 1+: downstream effects
+Steps 9+: downstream effects
   later context, logit, and token diffs are not a new root cause
-  step 1 (not root cause): full_history, model_visible_context, raw_logits, probabilities ('IENCE' (id=42589) vs 'IENCE' (id=42589))
-  step 2 (not root cause): full_history, model_visible_context, raw_logits ('otomy' (id=38385) vs 'otomy' (id=38385))
-  step 3 (not root cause): full_history, model_visible_context, raw_logits (' Naz' (id=12819) vs ' Naz' (id=12819))
-  step 4 (not root cause): full_history, model_visible_context, raw_logits, sampled_token ('pex' (id=24900) vs 'buster' (id=24899))
-  step 5 (not root cause): full_history, model_visible_context, raw_logits, probabilities (' peas' (id=22589) vs ' peas' (id=22589))
+  step 9 (not root cause): full_history, model_visible_context, raw_logits, probabilities, sampled_token (' but' (id=714) vs ' ' (id=220))
+  step 10 (not root cause): full_history, model_visible_context, raw_logits, probabilities, sampled_token (' ' (id=220) vs '9' (id=24))
+  step 11 (not root cause): full_history, model_visible_context, raw_logits, probabilities, sampled_token ('9' (id=24) vs ' sheep' (id=31912))
+  step 12 (not root cause): full_history, model_visible_context, raw_logits, probabilities (' run' (id=1598) vs ' run' (id=1598))
+  step 13 (not root cause): full_history, model_visible_context, raw_logits, probabilities, sampled_token (' away' (id=3123) vs ' off' (id=1007))
+  step 14 (not root cause): full_history, model_visible_context, raw_logits, probabilities (',' (id=11) vs ',' (id=11))
+  step 15 (not root cause): full_history, model_visible_context, raw_logits, probabilities (' we' (id=582) vs ' we' (id=582))
 
 notes
   Later context and logit diffs are downstream of the first divergence, not a new root cause.
