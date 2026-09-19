@@ -125,9 +125,8 @@ def _event_differences(event_a: Event | None, event_b: Event | None) -> list[str
 
 
 def _logit_fields_differ(event_a: Event, event_b: Event) -> bool:
-    if len(event_a.top_k) != len(event_b.top_k):
-        return True
-    for cand_a, cand_b in zip(event_a.top_k, event_b.top_k, strict=True):
+    overlap = min(len(event_a.top_k), len(event_b.top_k))
+    for cand_a, cand_b in zip(event_a.top_k[:overlap], event_b.top_k[:overlap], strict=True):
         if cand_a.token_id != cand_b.token_id:
             return True
         if cand_a.logit != cand_b.logit:
@@ -142,9 +141,8 @@ def _prob_fields_differ(event_a: Event, event_b: Event) -> bool:
         return True
     if event_a.sampled_logprob != event_b.sampled_logprob:
         return True
-    if len(event_a.top_k) != len(event_b.top_k):
-        return False
-    for cand_a, cand_b in zip(event_a.top_k, event_b.top_k, strict=True):
+    overlap = min(len(event_a.top_k), len(event_b.top_k))
+    for cand_a, cand_b in zip(event_a.top_k[:overlap], event_b.top_k[:overlap], strict=True):
         if cand_a.prob != cand_b.prob:
             return True
         if cand_a.logprob != cand_b.logprob:
@@ -173,12 +171,6 @@ def _classify_first(
         )
 
     assert event_a is not None and event_b is not None
-
-    if step == 0 and trace_a.run_metadata.prompt != trace_b.run_metadata.prompt:
-        return (
-            "prompt/history",
-            "prompt text differs at the start of the traces",
-        )
 
     if "full_history" in differences:
         if _tokenizer_explains_history(step, trace_a, trace_b):
@@ -218,7 +210,7 @@ def _classify_first(
         )
 
     if "raw_logits" in differences:
-        if _logits_uncomparable(trace_a, trace_b):
+        if _logits_uncomparable(trace_a, trace_b, event_a, event_b):
             return _classify_without_logits(trace_a, trace_b, differences)
         return (
             "raw-logit",
@@ -245,7 +237,7 @@ def _classify_first(
                 "tokenizer",
                 "sampled token ids match; decoded token strings differ",
             )
-        if _logits_uncomparable(trace_a, trace_b):
+        if _logits_uncomparable(trace_a, trace_b, event_a, event_b):
             return _classify_without_logits(trace_a, trace_b, differences)
         return (
             "sampling",
@@ -308,8 +300,19 @@ def _seed_differs(trace_a: Trace, trace_b: Trace) -> bool:
     return trace_a.generation_config.seed != trace_b.generation_config.seed
 
 
-def _logits_uncomparable(trace_a: Trace, trace_b: Trace) -> bool:
-    return trace_a.run_metadata.logits.mode == "none" or trace_b.run_metadata.logits.mode == "none"
+def _logits_uncomparable(
+    trace_a: Trace,
+    trace_b: Trace,
+    event_a: Event | None = None,
+    event_b: Event | None = None,
+) -> bool:
+    if trace_a.run_metadata.logits.mode == "none" or trace_b.run_metadata.logits.mode == "none":
+        return True
+    if trace_a.run_metadata.logits.k != trace_b.run_metadata.logits.k:
+        return True
+    if event_a is not None and event_b is not None and len(event_a.top_k) != len(event_b.top_k):
+        return True
+    return False
 
 
 def _capture_notes(trace_a: Trace, trace_b: Trace, notes: list[str]) -> None:
@@ -317,6 +320,8 @@ def _capture_notes(trace_a: Trace, trace_b: Trace, notes: list[str]) -> None:
     mode_b = trace_b.run_metadata.logits.mode
     if mode_a == "none" or mode_b == "none":
         notes.append("one or both traces stored logits.mode=none; compare will not invent logits")
+    if trace_a.run_metadata.logits.k != trace_b.run_metadata.logits.k:
+        notes.append("captured top-k depths differ; unequal capture k is not a raw-logit split")
     env_a = trace_a.environment
     env_b = trace_b.environment
     if env_a.device and env_b.device and env_a.device != env_b.device:

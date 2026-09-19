@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from collections.abc import Sequence
 from pathlib import Path
@@ -208,10 +209,10 @@ def _cmd_replay(args: argparse.Namespace) -> int:
 
 
 def _cmd_compare(args: argparse.Namespace) -> int:
-    store = TraceStore(Path(args.store))
+    store_root = Path(args.store)
     try:
-        trace_a = _load_trace_ref(args.trace_a, store)
-        trace_b = _load_trace_ref(args.trace_b, store)
+        trace_a = _load_trace_ref(args.trace_a, store_root)
+        trace_b = _load_trace_ref(args.trace_b, store_root)
     except KeyError as exc:
         sys.stderr.write(f"error: {exc}\n")
         return 1
@@ -228,11 +229,22 @@ def _cmd_compare(args: argparse.Namespace) -> int:
     return 1
 
 
-def _load_trace_ref(ref: str, store: TraceStore) -> Trace:
+def _looks_like_trace_path(ref: str) -> bool:
+    path = Path(ref)
+    if path.suffix.lower() in {".json", ".jsonl"}:
+        return True
+    if os.sep in ref:
+        return True
+    return os.altsep is not None and os.altsep in ref
+
+
+def _load_trace_ref(ref: str, store_root: Path) -> Trace:
     path = Path(ref)
     if path.is_file():
         return load_path(path)
-    return store.get(ref)
+    if _looks_like_trace_path(ref):
+        raise FileNotFoundError(f"trace file not found: {ref}")
+    return TraceStore(store_root).get(ref)
 
 
 def _replay(trace: Trace) -> ReplayResult:

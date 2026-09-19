@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 from uuid import UUID
 
-from pytest import CaptureFixture
+from pytest import CaptureFixture, MonkeyPatch
 
 from llmfr.cli import build_parser, run
 from llmfr.compare import DIVERGENCE_CLASSES, compare_traces, format_compare_result
@@ -294,6 +294,77 @@ def test_length_mismatch_uses_decoding_config() -> None:
     assert first.step == 1
     assert first.classification == "decoding config"
     assert first.differences == ("length",)
+
+
+def test_prompt_metadata_without_history_split_is_not_prompt_history() -> None:
+    trace_a = make_trace()
+    shifted = _shift_event_logits(make_trace(trace_id=TRACE_ID_B), delta=1.0)
+    trace_b = shifted.model_copy(
+        update={
+            "run_metadata": shifted.run_metadata.model_copy(update={"prompt": "other prompt"}),
+        }
+    )
+    assert trace_a.events[0].full_history.token_ids == trace_b.events[0].full_history.token_ids
+    assert trace_a.events[0].full_history.text == trace_b.events[0].full_history.text
+    result = compare_traces(trace_a, trace_b)
+    first = result.first_divergence
+    assert first is not None
+    assert first.classification == "raw-logit"
+    assert first.classification != "prompt/history"
+    assert "run_metadata.prompt" in {diff.field for diff in result.config_diffs}
+
+
+def test_unequal_capture_k_matching_prefix_is_config_only() -> None:
+    trace_a = make_trace(k=5)
+    trace_b = make_trace(k=3, trace_id=TRACE_ID_B)
+    result = compare_traces(trace_a, trace_b)
+    assert result.first_divergence is None
+    assert result.identical is False
+    assert "run_metadata.logits.k" in {diff.field for diff in result.config_diffs}
+    assert any("capture k" in note for note in result.notes)
+
+
+def test_unequal_capture_k_token_split_is_not_raw_logit() -> None:
+    trace_a = make_trace(k=5)
+    trace_b = make_trace(
+        k=3,
+        trace_id=TRACE_ID_B,
+        event_tokens=((109, "Nope"), (102, " world")),
+    )
+    result = compare_traces(trace_a, trace_b)
+    first = result.first_divergence
+    assert first is not None
+    assert first.classification != "raw-logit"
+    assert first.classification == "unknown/runtime"
+
+
+def test_compare_cli_files_does_not_create_store(
+    tmp_path: Path, capsys: CaptureFixture[str], monkeypatch: MonkeyPatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    path_a = tmp_path / "a.json"
+    path_b = tmp_path / "b.json"
+    path_a.write_text(dumps_json(make_trace()), encoding="utf-8")
+    path_b.write_text(dumps_json(make_trace(trace_id=TRACE_ID_B, prompt="other")), encoding="utf-8")
+    assert run(["compare", str(path_a), str(path_b)]) == 1
+    capsys.readouterr()
+    assert not (tmp_path / ".llmfr").exists()
+    assert not (tmp_path / "index.sqlite").exists()
+
+
+def test_compare_cli_missing_file_is_not_unknown_trace_id(
+    tmp_path: Path, capsys: CaptureFixture[str]
+) -> None:
+    missing = tmp_path / "a.jsonl"
+    present = tmp_path / "b.json"
+    present.write_text(dumps_json(make_trace()), encoding="utf-8")
+    code = run(["compare", str(missing), str(present)])
+    assert code == 1
+    err = capsys.readouterr().err
+    assert "error:" in err
+    assert "trace file not found" in err
+    assert "unknown trace_id" not in err
+    assert "Traceback" not in err
 
 
 def test_compare_cli_files(tmp_path: Path, capsys: CaptureFixture[str]) -> None:

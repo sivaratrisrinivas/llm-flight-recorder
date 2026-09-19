@@ -42,13 +42,17 @@ divergence and tags later fallout as downstream.
    `model/version`, `raw-logit`, `decoding config`,
    `probability distribution`, `sampling`, `unknown/runtime`.
    Same prompt text with different `prompt_token_ids` is tokenizer, not
-   prompt/history. Same visible context with a different model id or
-   revision is model/version, not raw-logit. Same captured top-k logits
-   with a different temperature or `do_sample` is decoding config. Same
-   logits and decoding config with a different sampled token is sampling
-   (Case B, including a seed change). Hosted traces with `logits.mode=none`
-   never get a raw-logit class; they fall through to sampling when seeds
-   differ, otherwise `unknown/runtime`.
+   prompt/history. `prompt/history` requires `full_history` or
+   `full_history_text` to differ; a metadata prompt mismatch with matching
+   history is not enough. Same visible context with a different model id or
+   revision is model/version, not raw-logit. Unequal `logits.k` or event
+   top-k depth is uncomparable capture policy, not raw-logit, including when
+   sampled tokens and the overlapping top-k prefix match (config-only). Same
+   captured top-k logits with a different temperature or `do_sample` is
+   decoding config. Same logits and decoding config with a different sampled
+   token is sampling (Case B, including a seed change). Hosted traces with
+   `logits.mode=none` never get a raw-logit class; they fall through to
+   sampling when seeds differ, otherwise `unknown/runtime`.
 
 5. **Later diffs are downstream (Case E).**
    After the first divergence, later full_history, visible-context, logit,
