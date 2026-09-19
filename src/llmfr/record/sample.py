@@ -68,6 +68,19 @@ def is_greedy(generation: GenerationConfig) -> bool:
     return temperature is None
 
 
+def effective_generation_config(generation: GenerationConfig) -> GenerationConfig:
+    """Config as actually used, for a Trace that M4 replay can trust.
+
+    If the effective policy is greedy (including ``do_sample=True`` with
+    temperature <= 0), store ``do_sample=False``. Temperature stays as
+    requested so a zero or negative value remains the reason argmax was used.
+    Never persist ``do_sample=True`` for an argmax run.
+    """
+    if not is_greedy(generation) or generation.do_sample is False:
+        return generation
+    return generation.model_copy(update={"do_sample": False})
+
+
 def softmax(logits: Sequence[float]) -> tuple[float, ...]:
     if not logits:
         raise ValueError("no logits")

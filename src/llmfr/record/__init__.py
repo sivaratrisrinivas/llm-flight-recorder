@@ -4,6 +4,7 @@ from llmfr.record.sample import (
     LocalRNG,
     SampleDecision,
     choose_token,
+    effective_generation_config,
     is_greedy,
     softmax,
 )
@@ -15,6 +16,7 @@ __all__ = [
     "RecordableAdapter",
     "SampleDecision",
     "choose_token",
+    "effective_generation_config",
     "is_greedy",
     "record_generation",
     "softmax",

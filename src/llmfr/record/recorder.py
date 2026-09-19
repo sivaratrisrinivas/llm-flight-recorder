@@ -27,7 +27,13 @@ from llmfr.core.schema import (
     Trace,
 )
 from llmfr.core.version import DEFAULT_TOP_K, MAX_TOP_K, SCHEMA_VERSION
-from llmfr.record.sample import LocalRNG, choose_token, is_greedy, rank_of
+from llmfr.record.sample import (
+    LocalRNG,
+    choose_token,
+    effective_generation_config,
+    is_greedy,
+    rank_of,
+)
 from llmfr.storage.store import FormatName, TraceStore
 
 RECORDER_PIPELINE = (
@@ -140,7 +146,7 @@ def record_generation(
         ),
         environment=adapter.environment(),
         model=adapter.model_config,
-        generation_config=generation,
+        generation_config=effective_generation_config(generation),
         events=events,
     )
     if store is not None:

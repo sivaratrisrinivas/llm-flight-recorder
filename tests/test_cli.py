@@ -84,6 +84,29 @@ def test_cli_record_prints_trace_id(
     assert loaded.run_metadata.prompt == "hello"
 
 
+def test_cli_record_temperature_zero_stores_do_sample_false(
+    tmp_path: Path, capsys: CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    adapter = FakeCausalLMAdapter(prompt_ids=[1, 2])
+    monkeypatch.setattr("llmfr.cli._build_hf_adapter", lambda **_kwargs: adapter)
+    code = run(
+        [
+            "record",
+            "hello",
+            "--store",
+            str(tmp_path),
+            "--max-new-tokens",
+            "1",
+            "--temperature",
+            "0",
+        ]
+    )
+    assert code == 0
+    loaded = TraceStore(tmp_path).get(capsys.readouterr().out.strip())
+    assert loaded.generation_config.do_sample is False
+    assert loaded.generation_config.temperature == 0.0
+
+
 def test_cli_record_validation_error(
     tmp_path: Path, capsys: CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:

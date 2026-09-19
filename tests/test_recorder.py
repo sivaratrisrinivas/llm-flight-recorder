@@ -106,6 +106,30 @@ def test_recorder_persists_via_trace_store(tmp_path: Path) -> None:
     assert (tmp_path / "index.sqlite").is_file()
 
 
+def test_recorder_stores_effective_greedy_config(tmp_path: Path) -> None:
+    adapter = FakeCausalLMAdapter(prompt_ids=[1, 2])
+    store = TraceStore(tmp_path)
+    requested = GenerationConfig(
+        max_new_tokens=2,
+        do_sample=True,
+        temperature=0.0,
+        seed=3,
+    )
+    trace = record_generation(
+        adapter,
+        "hello",
+        generation=requested,
+        store=store,
+    )
+    assert requested.do_sample is True
+    assert trace.generation_config.do_sample is False
+    assert trace.generation_config.temperature == 0.0
+    assert trace.generation_config.seed == 3
+    loaded = store.get(str(trace.run_metadata.trace_id))
+    assert loaded.generation_config.do_sample is False
+    assert loaded.generation_config.temperature == 0.0
+
+
 def test_seed_refused_when_adapter_lacks_support() -> None:
     adapter = FakeCausalLMAdapter(supports_seed=False)
     with pytest.raises(ValueError, match="does not support seed"):

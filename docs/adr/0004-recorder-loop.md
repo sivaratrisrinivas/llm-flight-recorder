@@ -47,7 +47,13 @@ already deterministic for a given prefix.
    it. Greedy (`do_sample=False` or temperature <= 0) stores the seed but
    does not draw.
 
-6. **Out of scope here:** `top_p`, `repetition_penalty`, replay (M4), compare
+6. **Stored `generation_config` is the effective policy.** If `is_greedy` is
+   true, including a request with `do_sample=True` and temperature <= 0, the
+   Trace stores `do_sample=False`. Temperature is left as requested so a zero
+   or negative value remains the reason argmax was used. Replay (M4) must
+   read this stored config. Never persist `do_sample=True` for an argmax run.
+
+7. **Out of scope here:** `top_p`, `repetition_penalty`, replay (M4), compare
    (M5/M6), and a polished `record` CLI (M7). The CLI prints `trace_id`.
 
 ## Consequences
@@ -56,7 +62,8 @@ already deterministic for a given prefix.
   truncation suffix rule.
 - Tests can prove seed divergence on a flat fake distribution without torch.
 - Replay (M4) can feed stored visible ids back into the adapter; it should
-  not assume a process-global torch seed was set.
+  not assume a process-global torch seed was set. It can trust
+  `generation_config.do_sample` on the Trace: False means tokens were argmax.
 
 ## Alternatives considered
 

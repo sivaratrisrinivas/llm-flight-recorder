@@ -12,6 +12,7 @@ from llmfr.record.sample import (
     LocalRNG,
     categorical,
     choose_token,
+    effective_generation_config,
     is_greedy,
     mask_top_k,
     scale_logits,
@@ -115,6 +116,37 @@ def test_is_greedy_from_generation_config() -> None:
     assert is_greedy(GenerationConfig(do_sample=True, temperature=0.0)) is True
     assert is_greedy(GenerationConfig(do_sample=True, temperature=1.0)) is False
     assert is_greedy(GenerationConfig()) is True
+
+
+def test_effective_generation_config_records_greedy_do_sample() -> None:
+    requested = GenerationConfig(
+        max_new_tokens=4,
+        do_sample=True,
+        temperature=0.0,
+        seed=9,
+    )
+    stored = effective_generation_config(requested)
+    assert stored.do_sample is False
+    assert stored.temperature == 0.0
+    assert stored.seed == 9
+    assert stored.max_new_tokens == 4
+
+    already = GenerationConfig(do_sample=False, temperature=1.0)
+    assert effective_generation_config(already) is already
+
+    sampling = GenerationConfig(do_sample=True, temperature=1.0)
+    assert effective_generation_config(sampling) is sampling
+    assert sampling.do_sample is True
+
+    from_default = effective_generation_config(GenerationConfig(max_new_tokens=1))
+    assert from_default.do_sample is False
+    assert from_default.temperature is None
+
+    negative = effective_generation_config(
+        GenerationConfig(do_sample=True, temperature=-1.0, max_new_tokens=1)
+    )
+    assert negative.do_sample is False
+    assert negative.temperature == -1.0
 
 
 def test_mask_top_k_then_softmax() -> None:
