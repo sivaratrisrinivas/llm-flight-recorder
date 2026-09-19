@@ -1,16 +1,20 @@
-"""Minimal inspect, record, replay, and compare CLI."""
+"""Production Typer CLI: record, replay, compare, and inspect stored traces."""
 
 from __future__ import annotations
 
-import argparse
 import json
 import os
 import sys
 from collections.abc import Sequence
 from pathlib import Path
-from typing import cast
+from typing import Annotated, Literal
 
+import typer
 from pydantic import ValidationError
+from typer._click.exceptions import NoArgsIsHelpError
+from typer.exceptions import Abort, TyperException
+from typer.main import get_command
+from typer.models import Context
 
 from llmfr.adapters.huggingface import (
     DEFAULT_HF_MODEL_ID,
@@ -18,14 +22,29 @@ from llmfr.adapters.huggingface import (
     HuggingFaceExtraMissingError,
 )
 from llmfr.compare import CompareResult, compare_traces, format_compare_result
-from llmfr.core.format import format_trace_topk
+from llmfr.core.format import (
+    format_inspect_overview,
+    format_inspect_step,
+    format_trace_topk,
+    inspect_overview_payload,
+    inspect_step_payload,
+)
 from llmfr.core.migrate import UnsupportedSchemaVersionError
 from llmfr.core.schema import GenerationConfig, Trace, load_path
 from llmfr.core.version import DEFAULT_TOP_K, SCHEMA_VERSION, __version__
 from llmfr.record import record_generation
 from llmfr.replay import BIT_IDENTICAL_CAVEAT, ReplayResult, replay_trace
 from llmfr.storage import TraceStore
-from llmfr.storage.store import FormatName
+
+EXIT_OK = 0
+EXIT_FAIL = 1
+EXIT_USAGE = 2
+
+EXIT_CODES_HELP = (
+    "Exit codes: 0 success (compare: traces identical; replay: status reproduced); "
+    "1 expected failure (missing or invalid input, compare diverged, "
+    "replay not reproduced); 2 usage error (unknown command or invalid options)."
+)
 
 _LOAD_ERRORS = (
     OSError,
@@ -45,188 +64,365 @@ _RECORD_ERRORS = (
     HuggingFaceExtraMissingError,
 )
 
+app = typer.Typer(
+    name="llmfr",
+    help=(
+        "LLM Flight Recorder. Record a generation, replay a stored trace, "
+        "compare two traces (first divergence vs downstream effects), "
+        "or inspect a stored trace at a step. Does not invent logits. " + EXIT_CODES_HELP
+    ),
+    no_args_is_help=True,
+    add_completion=False,
+    pretty_exceptions_enable=False,
+    rich_markup_mode=None,
+    context_settings={"help_option_names": ["-h", "--help"]},
+)
 
-def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
-        prog="llmfr",
-        description=(
-            "LLM Flight Recorder. Record a short generation, replay a stored trace, "
-            "compare two traces, or inspect stored traces."
-        ),
-    )
-    sub = parser.add_subparsers(dest="command", required=True)
 
-    sub.add_parser("version", help="Print package and schema versions")
+def format_help() -> str:
+    command = get_command(app)
+    ctx = Context(command, info_name="llmfr")
+    return command.get_help(ctx)
 
-    validate = sub.add_parser("validate", help="Validate a JSON or JSONL trace file")
-    validate.add_argument("path")
 
-    topk = sub.add_parser("topk", help="Print human-readable top-k logits from a trace")
-    topk.add_argument("path")
+class _HelpFacade:
+    """Argparse-shaped helper so existing tests can still call format_help()."""
 
-    record = sub.add_parser(
-        "record",
-        help="Record a short generation and print trace_id (Milestone 3, minimal)",
-    )
-    record.add_argument("prompt", help="Prompt text to encode and generate from")
-    record.add_argument(
-        "--store",
-        default=".llmfr",
-        help="TraceStore directory (SQLite index plus traces/)",
-    )
-    record.add_argument("--max-new-tokens", type=int, default=8)
-    record.add_argument("--seed", type=int, default=None)
-    record.add_argument("--temperature", type=float, default=1.0)
-    record.add_argument(
-        "--greedy",
-        action="store_true",
-        help="Argmax instead of sampling (ignores --temperature for the choice)",
-    )
-    record.add_argument("--model", default=None, help="Hugging Face model id (default: tiny-gpt2)")
-    record.add_argument("--capture-k", type=int, default=DEFAULT_TOP_K)
-    record.add_argument("--max-visible-tokens", type=int, default=None)
-    record.add_argument(
-        "--format",
-        choices=("json", "jsonl"),
-        default="jsonl",
-        dest="fmt",
-    )
+    def format_help(self) -> str:
+        return format_help()
 
-    replay = sub.add_parser(
-        "replay",
-        help="Replay a stored trace and print a structured result (Milestone 4, minimal)",
-    )
-    replay.add_argument("trace_id", help="Stable trace_id from TraceStore")
-    replay.add_argument(
-        "--store",
-        default=".llmfr",
-        help="TraceStore directory (SQLite index plus traces/)",
-    )
 
-    compare = sub.add_parser(
-        "compare",
-        help="Compare two traces: first divergence vs downstream effects",
-    )
-    compare.add_argument("trace_a", help="Trace file path or TraceStore trace_id")
-    compare.add_argument("trace_b", help="Trace file path or TraceStore trace_id")
-    compare.add_argument(
-        "--store",
-        default=".llmfr",
-        help="TraceStore directory when arguments are trace_ids",
-    )
-    compare.add_argument(
-        "--json",
-        action="store_true",
-        dest="as_json",
-        help="Print structured CompareResult JSON instead of the text report",
-    )
-    return parser
+def build_parser() -> _HelpFacade:
+    return _HelpFacade()
 
 
 def run(argv: Sequence[str] | None = None) -> int:
-    parser = build_parser()
-    args = parser.parse_args(argv)
-    if args.command == "version":
-        sys.stdout.write(f"llmfr {__version__}\nschema {SCHEMA_VERSION}\n")
-        return 0
-    if args.command == "validate":
-        trace = _load_trace(args.path)
-        if isinstance(trace, int):
-            return trace
-        sys.stdout.write(
-            f"ok {trace.run_metadata.trace_id} "
-            f"schema={trace.schema_version} events={len(trace.events)}\n"
+    args = None if argv is None else list(argv)
+    try:
+        result = app(args=args, standalone_mode=False)
+    except Abort:
+        sys.stderr.write("error: aborted\n")
+        return EXIT_FAIL
+    except NoArgsIsHelpError as exc:
+        help_text = exc.format_message()
+        if not help_text.endswith("\n"):
+            help_text += "\n"
+        sys.stdout.write(help_text)
+        return EXIT_OK
+    except TyperException as exc:
+        sys.stderr.write(f"error: {exc.format_message()}\n")
+        return int(exc.exit_code)
+    if isinstance(result, int):
+        return result
+    return EXIT_OK
+
+
+def main(argv: Sequence[str] | None = None) -> None:
+    raise SystemExit(run(argv))
+
+
+@app.command()
+def version() -> None:
+    """Print package and schema versions."""
+    sys.stdout.write(f"llmfr {__version__}\nschema {SCHEMA_VERSION}\n")
+    raise typer.Exit(EXIT_OK)
+
+
+@app.command()
+def validate(
+    path: Annotated[
+        str,
+        typer.Argument(metavar="PATH", help="JSON or JSONL trace file to validate."),
+    ],
+) -> None:
+    """Validate a JSON or JSONL trace file. Exit 0 if the schema loads."""
+    trace = _load_trace(path)
+    if isinstance(trace, int):
+        raise typer.Exit(trace)
+    sys.stdout.write(
+        f"ok {trace.run_metadata.trace_id} "
+        f"schema={trace.schema_version} events={len(trace.events)}\n"
+    )
+    raise typer.Exit(EXIT_OK)
+
+
+@app.command()
+def topk(
+    path: Annotated[str, typer.Argument(metavar="PATH", help="JSON or JSONL trace file.")],
+) -> None:
+    """Print human-readable top-k logits for every step of a trace file.
+
+    Prefer `llmfr inspect TRACE --step N` to see history vs visible context
+    together with that step's top-k. This command keeps the full-trace dump.
+    """
+    trace = _load_trace(path)
+    if isinstance(trace, int):
+        raise typer.Exit(trace)
+    sys.stdout.write(format_trace_topk(trace))
+    raise typer.Exit(EXIT_OK)
+
+
+@app.command()
+def record(
+    prompt: Annotated[
+        str,
+        typer.Argument(metavar="PROMPT", help="Prompt text to encode and generate from."),
+    ],
+    store: Annotated[
+        str,
+        typer.Option("--store", help="TraceStore directory (SQLite index plus traces/)."),
+    ] = ".llmfr",
+    max_new_tokens: Annotated[
+        int,
+        typer.Option("--max-new-tokens", help="Maximum number of new tokens to record."),
+    ] = 8,
+    seed: Annotated[
+        int | None,
+        typer.Option("--seed", help="Recorder LocalRNG seed. Isolated from torch."),
+    ] = None,
+    temperature: Annotated[
+        float,
+        typer.Option("--temperature", help="Sampling temperature. Ignored when --greedy."),
+    ] = 1.0,
+    greedy: Annotated[
+        bool,
+        typer.Option("--greedy", help="Argmax instead of sampling."),
+    ] = False,
+    model: Annotated[
+        str | None,
+        typer.Option(
+            "--model",
+            help="Hugging Face model id (default: sshleifer/tiny-gpt2).",
+        ),
+    ] = None,
+    capture_k: Annotated[
+        int,
+        typer.Option("--capture-k", help="Top-k candidates stored per step (not full vocab)."),
+    ] = DEFAULT_TOP_K,
+    max_visible_tokens: Annotated[
+        int | None,
+        typer.Option(
+            "--max-visible-tokens",
+            help="Left-window size for model-visible context. Default: model max.",
+        ),
+    ] = None,
+    fmt: Annotated[
+        Literal["json", "jsonl"],
+        typer.Option("--format", help="On-disk trace format under traces/."),
+    ] = "jsonl",
+) -> None:
+    """Record a short generation into TraceStore and print trace_id.
+
+    Exit 0 prints the new trace_id on stdout. Exit 1 for expected failures
+    (missing Hugging Face extra, invalid config, I/O). Does not invent logits.
+    """
+    raise typer.Exit(
+        _cmd_record(
+            prompt=prompt,
+            store=store,
+            max_new_tokens=max_new_tokens,
+            seed=seed,
+            temperature=temperature,
+            greedy=greedy,
+            model=model,
+            capture_k=capture_k,
+            max_visible_tokens=max_visible_tokens,
+            fmt=fmt,
         )
-        return 0
-    if args.command == "topk":
-        trace = _load_trace(args.path)
-        if isinstance(trace, int):
-            return trace
-        sys.stdout.write(format_trace_topk(trace))
-        return 0
-    if args.command == "record":
-        return _cmd_record(args)
-    if args.command == "replay":
-        return _cmd_replay(args)
-    if args.command == "compare":
-        return _cmd_compare(args)
-    raise AssertionError(f"unknown command {args.command}")
+    )
 
 
-def _cmd_record(args: argparse.Namespace) -> int:
+@app.command()
+def replay(
+    trace_id: Annotated[
+        str,
+        typer.Argument(metavar="TRACE_ID", help="Stable trace_id from TraceStore."),
+    ],
+    store: Annotated[
+        str,
+        typer.Option("--store", help="TraceStore directory (SQLite index plus traces/)."),
+    ] = ".llmfr",
+) -> None:
+    """Replay a stored trace and print a structured ReplayResult JSON.
+
+    Exit 0 only when status is reproduced. Any other replay status, unknown
+    trace_id, or store error is exit 1. Usage errors are exit 2.
+    """
+    raise typer.Exit(_cmd_replay(trace_id=trace_id, store=store))
+
+
+@app.command()
+def compare(
+    trace_a: Annotated[
+        str,
+        typer.Argument(metavar="TRACE_A", help="Trace file path or TraceStore trace_id."),
+    ],
+    trace_b: Annotated[
+        str,
+        typer.Argument(metavar="TRACE_B", help="Trace file path or TraceStore trace_id."),
+    ],
+    store: Annotated[
+        str,
+        typer.Option("--store", help="TraceStore directory when arguments are trace_ids."),
+    ] = ".llmfr",
+    as_json: Annotated[
+        bool,
+        typer.Option("--json", help="Print structured CompareResult JSON instead of text."),
+    ] = False,
+) -> None:
+    """Compare two traces: first divergence vs downstream effects.
+
+    Exit 0 only when the traces are identical (no first divergence and no
+    config diff of interest). Diverged compares and load errors are exit 1.
+    """
+    raise typer.Exit(_cmd_compare(trace_a=trace_a, trace_b=trace_b, store=store, as_json=as_json))
+
+
+@app.command()
+def inspect(
+    trace: Annotated[
+        str,
+        typer.Argument(metavar="TRACE", help="Trace file path or TraceStore trace_id."),
+    ],
+    store: Annotated[
+        str,
+        typer.Option("--store", help="TraceStore directory when TRACE is a trace_id."),
+    ] = ".llmfr",
+    step: Annotated[
+        int | None,
+        typer.Option(
+            "--step",
+            help=(
+                "Inspect one recorded step (0-based): history vs visible context, "
+                "top-k, sampled token."
+            ),
+        ),
+    ] = None,
+    as_json: Annotated[
+        bool,
+        typer.Option("--json", help="Print structured inspect JSON instead of text."),
+    ] = False,
+) -> None:
+    """Inspect a stored trace, optionally at --step N.
+
+    Without --step, prints run metadata and the sampled-token sequence.
+    With --step N, prints full_history vs model_visible_context, the sampled
+    token, and that step's top-k. Does not invent logits. Exit 1 for missing
+    traces or an out-of-range step.
+    """
+    raise typer.Exit(_cmd_inspect(ref=trace, store=store, step=step, as_json=as_json))
+
+
+def _cmd_record(
+    *,
+    prompt: str,
+    store: str,
+    max_new_tokens: int,
+    seed: int | None,
+    temperature: float,
+    greedy: bool,
+    model: str | None,
+    capture_k: int,
+    max_visible_tokens: int | None,
+    fmt: Literal["json", "jsonl"],
+) -> int:
     try:
         adapter = _build_hf_adapter(
-            model_id=args.model,
-            max_visible_tokens=args.max_visible_tokens,
+            model_id=model,
+            max_visible_tokens=max_visible_tokens,
         )
         generation = GenerationConfig(
-            temperature=args.temperature,
-            max_new_tokens=args.max_new_tokens,
-            do_sample=not args.greedy,
-            seed=args.seed,
+            temperature=temperature,
+            max_new_tokens=max_new_tokens,
+            do_sample=not greedy,
+            seed=seed,
         )
-        trace = record_generation(
+        recorded = record_generation(
             adapter,
-            args.prompt,
+            prompt,
             generation=generation,
-            store=TraceStore(Path(args.store)),
-            capture_k=args.capture_k,
-            fmt=cast(FormatName, args.fmt),
+            store=TraceStore(Path(store)),
+            capture_k=capture_k,
+            fmt=fmt,
             source="cli",
         )
     except _RECORD_ERRORS as exc:
-        sys.stderr.write(f"error: {exc}\n")
-        return 1
-    sys.stdout.write(f"{trace.run_metadata.trace_id}\n")
-    return 0
+        return _fail(exc)
+    sys.stdout.write(f"{recorded.run_metadata.trace_id}\n")
+    return EXIT_OK
 
 
-def _cmd_replay(args: argparse.Namespace) -> int:
+def _cmd_replay(*, trace_id: str, store: str) -> int:
     try:
-        trace = TraceStore(Path(args.store)).get(args.trace_id)
+        loaded = TraceStore(Path(store)).get(trace_id)
     except KeyError as exc:
-        sys.stderr.write(f"error: {exc}\n")
-        return 1
+        return _fail(exc)
     except _RECORD_ERRORS as exc:
-        sys.stderr.write(f"error: {exc}\n")
-        return 1
+        return _fail(exc)
     try:
-        result = _replay(trace)
+        result = _replay(loaded)
     except _RECORD_ERRORS as exc:
         result = ReplayResult(
-            trace_id=str(trace.run_metadata.trace_id),
+            trace_id=str(loaded.run_metadata.trace_id),
             status="not_replayable",
             matched_steps=0,
-            total_steps=len(trace.events),
-            recorded_revision=trace.model.revision,
+            total_steps=len(loaded.events),
+            recorded_revision=loaded.model.revision,
             reason=str(exc),
             notes=(BIT_IDENTICAL_CAVEAT, f"replay failed: {exc}"),
         )
     sys.stdout.write(result.model_dump_json(indent=2) + "\n")
     if result.status == "reproduced":
-        return 0
-    return 1
+        return EXIT_OK
+    return EXIT_FAIL
 
 
-def _cmd_compare(args: argparse.Namespace) -> int:
-    store_root = Path(args.store)
+def _cmd_compare(*, trace_a: str, trace_b: str, store: str, as_json: bool) -> int:
+    store_root = Path(store)
     try:
-        trace_a = _load_trace_ref(args.trace_a, store_root)
-        trace_b = _load_trace_ref(args.trace_b, store_root)
+        loaded_a = _load_trace_ref(trace_a, store_root)
+        loaded_b = _load_trace_ref(trace_b, store_root)
     except KeyError as exc:
-        sys.stderr.write(f"error: {exc}\n")
-        return 1
+        return _fail(exc)
     except _LOAD_ERRORS as exc:
-        sys.stderr.write(f"error: {exc}\n")
-        return 1
-    result = _compare(trace_a, trace_b)
-    if args.as_json:
+        return _fail(exc)
+    result = _compare(loaded_a, loaded_b)
+    if as_json:
         sys.stdout.write(result.model_dump_json(indent=2) + "\n")
     else:
         sys.stdout.write(format_compare_result(result))
     if result.identical:
-        return 0
-    return 1
+        return EXIT_OK
+    return EXIT_FAIL
+
+
+def _cmd_inspect(*, ref: str, store: str, step: int | None, as_json: bool) -> int:
+    try:
+        loaded = _load_trace_ref(ref, Path(store))
+    except KeyError as exc:
+        return _fail(exc)
+    except _LOAD_ERRORS as exc:
+        return _fail(exc)
+    if step is not None:
+        if step < 0 or step >= len(loaded.events):
+            return _fail(_step_range_error(step, len(loaded.events)))
+        if as_json:
+            sys.stdout.write(json.dumps(inspect_step_payload(loaded, step), indent=2) + "\n")
+        else:
+            sys.stdout.write(format_inspect_step(loaded, step))
+        return EXIT_OK
+    if as_json:
+        sys.stdout.write(json.dumps(inspect_overview_payload(loaded), indent=2) + "\n")
+    else:
+        sys.stdout.write(format_inspect_overview(loaded))
+    return EXIT_OK
+
+
+def _step_range_error(step: int, event_count: int) -> str:
+    if event_count <= 0:
+        return f"step {step} is out of range (trace has no events)"
+    last = event_count - 1
+    return f"step {step} is out of range (trace has {event_count} events, steps 0..{last})"
 
 
 def _looks_like_trace_path(ref: str) -> bool:
@@ -271,9 +467,10 @@ def _load_trace(path: str) -> Trace | int:
     try:
         return load_path(path)
     except _LOAD_ERRORS as exc:
-        sys.stderr.write(f"error: {exc}\n")
-        return 1
+        return _fail(exc)
 
 
-def main(argv: Sequence[str] | None = None) -> None:
-    raise SystemExit(run(argv))
+def _fail(exc: BaseException | str) -> int:
+    message = exc if isinstance(exc, str) else str(exc)
+    sys.stderr.write(f"error: {message}\n")
+    return EXIT_FAIL

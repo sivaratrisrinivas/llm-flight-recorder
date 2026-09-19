@@ -1,4 +1,11 @@
-from llmfr.core.format import format_event_topk, format_trace_topk
+from llmfr.core.format import (
+    format_event_topk,
+    format_inspect_overview,
+    format_inspect_step,
+    format_trace_topk,
+    inspect_overview_payload,
+    inspect_step_payload,
+)
 from llmfr.core.migrate import UnsupportedSchemaVersionError, migrate_payload
 from llmfr.core.schema import (
     Environment,
@@ -36,7 +43,11 @@ __all__ = [
     "dumps_json",
     "dumps_jsonl",
     "format_event_topk",
+    "format_inspect_overview",
+    "format_inspect_step",
     "format_trace_topk",
+    "inspect_overview_payload",
+    "inspect_step_payload",
     "load_path",
     "loads_json",
     "loads_jsonl",
