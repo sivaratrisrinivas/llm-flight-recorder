@@ -37,6 +37,17 @@ that file format, `record_generation`, and `compare_traces`.
    No LLM judge. Prompt numerals in a truncated completion can become the
    last number; that is a documented limit, not a hidden rewrite.
 
+   `disagree_rate` is disagree / gradeable diverged pairs. `wrong_answer_rate`
+   is wrong traces / gradeable traces among those same pairs. Ungraded pairs
+   (any `no_answer` side) are excluded from both rates.
+
+   Compare `identical` is true only when there is no first event divergence
+   and no config diff. A sampling or decoding-config split that changes seed
+   or temperature but not sampled tokens is `no first divergence`, not
+   identical. The table counts those separately. `llmfr study` does not
+   emit a positive/null verdict; that label is GS-T22n-only and is not a
+   p-value.
+
 5. **Output.** Exit 0 prints the table (class counts, disagree rate,
    wrong-answer rate, per-pair grades). `--json` prints the same payload.
    `--redact` grades first, then redacts store writes; JSON omits

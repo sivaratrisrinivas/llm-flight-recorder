@@ -129,17 +129,24 @@ def test_run_study_records_pairs_and_grades(tmp_path: Path) -> None:
     assert report.n_pairs == 2
     assert report.grading_rule == GRADING_RULE
     assert len(store.list()) == 4
+    assert "verdict" not in report.summary
+    assert report.summary["n_no_first_divergence"] == 2
     table = format_study_report(report)
     assert "sampling" in table
     assert "decoding config" in table
     assert "disagree rate" in table
     assert GRADING_RULE in table
+    assert "pairs with no first event divergence: 2" in table
+    assert "identical pairs:" not in table
     for pair in report.pairs:
         assert pair["gold"] == 2
         assert pair["extracted_a"] == 2
         assert pair["grade_a"] == "correct"
         assert pair["intended_kind"] in ("sampling", "decoding_config")
         assert pair["output_a"]
+        assert pair["observed_class"] is None
+        assert pair["no_first_divergence"] is True
+        assert pair["identical"] is False
 
 
 def test_cli_study_prints_table(
@@ -170,6 +177,8 @@ def test_cli_study_prints_table(
     assert "two_plus_two" in captured.out
     assert "grading:" in captured.out
     assert "No LLM judge" in captured.out
+    assert "no first divergence" in captured.out
+    assert "identical pairs:" not in captured.out
     assert len(TraceStore(store).list()) == 4
     assert "recording 1/2" in captured.err
 
@@ -205,6 +214,9 @@ def test_cli_study_json_and_no_persist(
     assert payload["grading_rule"] == GRADING_RULE
     assert payload["sampling_seeds"] == [1, 2]
     assert payload["decoding_temperatures"] == [0.7, 1.2]
+    assert "verdict" not in payload["summary"]
+    assert "n_identical" not in payload["summary"]
+    assert payload["summary"]["n_no_first_divergence"] == 2
     assert not (store / "index.sqlite").exists()
 
 
@@ -428,7 +440,7 @@ def test_cli_study_is_listed(capsys: CaptureFixture[str]) -> None:
     assert "No LLM judge" in study_help
 
 
-def test_summarize_null_when_rates_similar() -> None:
+def test_summarize_has_no_verdict_and_excludes_ungraded_from_wrong_rate() -> None:
     similar = []
     for _ in range(4):
         similar.append(
@@ -448,5 +460,35 @@ def test_summarize_null_when_rates_similar() -> None:
             }
         )
     summary = summarize_pairs(similar)
-    assert summary["verdict"] == "null"
+    assert "verdict" not in summary
     assert summary["by_class"]["sampling"]["disagree_rate"] == 1.0
+    mixed = [
+        {
+            "observed_class": "sampling",
+            "grade_a": "wrong",
+            "grade_b": "correct",
+            "outcome": "disagree",
+        },
+        {
+            "observed_class": "sampling",
+            "grade_a": "wrong",
+            "grade_b": "no_answer",
+            "outcome": "ungraded",
+        },
+        {
+            "observed_class": None,
+            "grade_a": "correct",
+            "grade_b": "correct",
+            "outcome": "agree_correct",
+            "identical": False,
+        },
+    ]
+    mixed_summary = summarize_pairs(mixed)
+    sampling = mixed_summary["by_class"]["sampling"]
+    assert mixed_summary["n_no_first_divergence"] == 1
+    assert sampling["ungraded"] == 1
+    assert sampling["n_gradeable_diverged"] == 1
+    assert sampling["n_wrong_traces"] == 1
+    assert sampling["n_gradeable_traces"] == 2
+    assert sampling["wrong_answer_rate"] == 0.5
+    assert sampling["disagree_rate"] == 1.0

@@ -79,17 +79,24 @@ def _rate(numerator: int, denominator: int) -> float | None:
 
 
 def summarize_pairs(pairs: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
+    """Count sampling vs decoding-config pairs. No verdict field.
+
+    ``observed_class is None`` means no first event divergence. That is not
+    ``compare.identical``: seed or temperature can still differ. Ungraded
+    pairs (any ``no_answer`` side) are excluded from disagree_rate and
+    wrong_answer_rate.
+    """
     by_class = {
         "sampling": _empty_class_row(),
         "decoding config": _empty_class_row(),
     }
     other_classes: dict[str, int] = {}
-    n_identical = 0
+    n_no_first_divergence = 0
     n_pairs = len(pairs)
     for pair in pairs:
         observed = pair.get("observed_class")
         if observed is None:
-            n_identical += 1
+            n_no_first_divergence += 1
             continue
         row = by_class.get(str(observed))
         if row is None:
@@ -101,27 +108,27 @@ def summarize_pairs(pairs: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
             row[outcome] += 1
         if outcome in ("agree_correct", "agree_wrong", "disagree"):
             row["n_gradeable_diverged"] += 1
-        for grade in (pair["grade_a"], pair["grade_b"]):
-            if grade == "correct":
-                row["n_gradeable_traces"] += 1
-                row["n_correct_traces"] += 1
-            elif grade == "wrong":
-                row["n_gradeable_traces"] += 1
-                row["n_wrong_traces"] += 1
+            for grade in (pair["grade_a"], pair["grade_b"]):
+                if grade == "correct":
+                    row["n_gradeable_traces"] += 1
+                    row["n_correct_traces"] += 1
+                elif grade == "wrong":
+                    row["n_gradeable_traces"] += 1
+                    row["n_wrong_traces"] += 1
     for row in by_class.values():
         row["disagree_rate"] = _rate(row["disagree"], row["n_gradeable_diverged"])
         row["wrong_answer_rate"] = _rate(row["n_wrong_traces"], row["n_gradeable_traces"])
     return {
         "n_pairs": n_pairs,
-        "n_identical": n_identical,
+        "n_no_first_divergence": n_no_first_divergence,
         "n_other_class": sum(other_classes.values()),
         "other_classes": other_classes,
         "by_class": by_class,
-        "verdict": _verdict(by_class),
     }
 
 
-def _verdict(by_class: Mapping[str, Mapping[str, Any]]) -> str:
+def descriptive_verdict(by_class: Mapping[str, Mapping[str, Any]]) -> str:
+    """GS-T22n descriptive label only. Not a p-value. Not part of ``llmfr study``."""
     sampling = by_class["sampling"]
     decoding = by_class["decoding config"]
     rate_s = sampling["disagree_rate"]

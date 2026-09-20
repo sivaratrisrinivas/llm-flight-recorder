@@ -36,11 +36,12 @@ from llmfr.study import (
     MIN_GRADEABLE_FOR_VERDICT,
     RATE_RATIO_FOR_POSITIVE,
     PairKind,
+    descriptive_verdict,
     extract_last_whole_number,
     grade_output,
     pair_outcome,
-    summarize_pairs,
 )
+from llmfr.study.grade import summarize_pairs as _summarize_study_pairs
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -97,6 +98,18 @@ ITEMS: tuple[Item, ...] = (
     ),
     Item("two_plus_two", "What is 2 plus 2?", 4),
 )
+
+
+def summarize_pairs(pairs: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
+    """Finding summary: study counts plus the GS-T22n descriptive verdict.
+
+    ``n_identical`` here means no first event divergence, matching the
+    finding prose. ``verdict`` is not a p-value; ``llmfr study`` omits it.
+    """
+    summary = _summarize_study_pairs(pairs)
+    summary["n_identical"] = summary.pop("n_no_first_divergence")
+    summary["verdict"] = descriptive_verdict(summary["by_class"])
+    return summary
 
 
 def _docs_bound(path: Path) -> bool:

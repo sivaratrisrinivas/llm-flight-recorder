@@ -325,6 +325,7 @@ def _grade_pair(
         "intended_kind": kind,
         "observed_class": None if first is None else first.classification,
         "first_step": None if first is None else first.step,
+        "no_first_divergence": first is None,
         "identical": compared.identical,
         "grade_a": grade_a,
         "grade_b": grade_b,

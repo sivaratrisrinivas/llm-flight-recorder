@@ -37,13 +37,13 @@ def format_study_report(report: StudyReport) -> str:
         _class_row("sampling", sampling),
         _class_row("decoding config", decoding),
         "",
-        f"identical pairs: {summary['n_identical']}",
+        f"pairs with no first event divergence: {summary['n_no_first_divergence']}",
         f"other observed classes: {_other(summary['other_classes'])}",
         "",
         "pairs",
     ]
     for pair in report.pairs:
-        observed = pair["observed_class"] if pair["observed_class"] else "identical"
+        observed = _pair_class_label(pair)
         lines.append(
             f"  {pair['item_id']} intended {pair['intended_kind']}: "
             f"class {observed} step={pair['first_step']} "
@@ -53,6 +53,15 @@ def format_study_report(report: StudyReport) -> str:
         )
     lines.append("")
     return "\n".join(lines)
+
+
+def _pair_class_label(pair: Mapping[str, Any]) -> str:
+    observed = pair.get("observed_class")
+    if observed:
+        return str(observed)
+    if pair.get("identical"):
+        return "identical"
+    return "no first divergence"
 
 
 def _class_row(name: str, row: Mapping[str, Any]) -> str:
