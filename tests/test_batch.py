@@ -118,14 +118,17 @@ def test_record_prompt_batch_persists_and_tags(tmp_path: Path) -> None:
         + "\n",
     )
     store = TraceStore(tmp_path / "store")
+    streamed: list[str] = []
     traces = record_prompt_batch(
         FakeCausalLMAdapter(prompt_ids=[1, 2]),
         load_prompt_file(path),
         generation=GenerationConfig(max_new_tokens=1, do_sample=False, seed=1),
         store=store,
         source="test",
+        on_recorded=lambda trace: streamed.append(str(trace.run_metadata.trace_id)),
     )
     assert len(traces) == 2
+    assert streamed == [str(trace.run_metadata.trace_id) for trace in traces]
     assert [trace.run_metadata.prompt for trace in traces] == ["Hello", "How many sheep?"]
     assert traces[0].run_metadata.tags["id"] == "a"
     assert traces[0].run_metadata.tags["batch_index"] == "0"
@@ -147,15 +150,18 @@ def test_record_prompt_batch_openai_fail_closed_keeps_prior(tmp_path: Path) -> N
         ]
     )
     store = TraceStore(tmp_path / "store")
+    streamed: list[str] = []
     with pytest.raises(BatchPromptError, match="per-token logprob content"):
         record_prompt_batch(
             OpenAIChatAdapter("gpt-4o-mini", client=client, encoding=FakeEncoding()),
             load_prompt_file(path),
             generation=GenerationConfig(max_new_tokens=2, do_sample=False),
             store=store,
+            on_recorded=lambda trace: streamed.append(str(trace.run_metadata.trace_id)),
         )
     listed = store.list()
     assert len(listed) == 1
+    assert streamed == [listed[0].trace_id]
     loaded = store.get(str(listed[0].trace_id))
     assert loaded.run_metadata.prompt == "Hi"
     assert loaded.run_metadata.logits.mode == "topk"
@@ -374,11 +380,54 @@ def test_cli_record_prompts_openai_omitted_logprobs_fail_closed(
         ]
     )
     assert code == 1
-    err = capsys.readouterr().err
-    assert "error:" in err
-    assert "per-token logprob content" in err
-    assert "Traceback" not in err
+    captured = capsys.readouterr()
+    assert captured.out.strip() == ""
+    assert "error:" in captured.err
+    assert "per-token logprob content" in captured.err
+    assert "Traceback" not in captured.err
     assert TraceStore(store).list() == []
+
+
+def test_cli_record_prompts_streams_ids_before_mid_batch_failure(
+    tmp_path: Path, capsys: CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client = FakeOpenAIClient(
+        [
+            make_chat_response(hello_logprob_tokens()),
+            make_chat_response(hello_logprob_tokens(), output_text="Hello", include_logprobs=False),
+        ]
+    )
+    monkeypatch.setattr(
+        "llmfr.cli._build_openai_adapter",
+        lambda **_kwargs: OpenAIChatAdapter("gpt-4o-mini", client=client, encoding=FakeEncoding()),
+    )
+    path = _write(tmp_path / "prompts.jsonl", '{"prompt":"Hi"}\n{"prompt":"Yo"}\n')
+    store = tmp_path / "store"
+    code = run(
+        [
+            "record",
+            "--prompts",
+            str(path),
+            "--provider",
+            "openai",
+            "--store",
+            str(store),
+            "--max-new-tokens",
+            "2",
+            "--greedy",
+        ]
+    )
+    assert code == 1
+    captured = capsys.readouterr()
+    ids = captured.out.strip().splitlines()
+    assert len(ids) == 1
+    loaded = TraceStore(store).get(ids[0])
+    assert loaded.run_metadata.prompt == "Hi"
+    assert loaded.run_metadata.logits.mode == "topk"
+    assert "error:" in captured.err
+    assert "per-token logprob content" in captured.err
+    assert "Traceback" not in captured.err
+    assert [entry.trace_id for entry in TraceStore(store).list()] == ids
 
 
 def test_cli_record_prompts_mutually_exclusive(tmp_path: Path, capsys: CaptureFixture[str]) -> None:

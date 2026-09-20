@@ -10,7 +10,7 @@ or an ``openai:`` model prefix).
 from __future__ import annotations
 
 import json
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -127,12 +127,15 @@ def record_prompt_batch(
     source: str | None = "llmfr.record",
     persist: bool = True,
     redact: Redactor | None = None,
+    on_recorded: Callable[[Trace], None] | None = None,
 ) -> list[Trace]:
     """Record each job with the same adapter. Fail closed on the first error.
 
-    Earlier items already written stay in ``store``. Does not invent logits.
-    Per-item ``seed`` / ``temperature`` / ``max_new_tokens`` / ``greedy``
-    override ``generation``; backend selection is not a per-item field.
+    ``on_recorded`` runs after each successful item, before the next one,
+    so a CLI can stream ``trace_id`` lines as they complete. Earlier items
+    already written stay in ``store``. Does not invent logits. Per-item
+    ``seed`` / ``temperature`` / ``max_new_tokens`` / ``greedy`` override
+    ``generation``; backend selection is not a per-item field.
     """
     if not jobs:
         raise BatchPromptError("prompt list is empty")
@@ -143,19 +146,17 @@ def record_prompt_batch(
         if job.id is not None:
             tags["id"] = job.id
         try:
-            traces.append(
-                record_generation(
-                    adapter,
-                    job.prompt,
-                    generation=_job_generation(generation, job),
-                    store=store,
-                    capture_k=capture_k,
-                    fmt=fmt,
-                    source=source,
-                    tags=tags,
-                    persist=persist,
-                    redact=redact,
-                )
+            recorded = record_generation(
+                adapter,
+                job.prompt,
+                generation=_job_generation(generation, job),
+                store=store,
+                capture_k=capture_k,
+                fmt=fmt,
+                source=source,
+                tags=tags,
+                persist=persist,
+                redact=redact,
             )
         except (OSError, TypeError, ValueError, RuntimeError) as exc:
             raise BatchPromptError(
@@ -163,6 +164,9 @@ def record_prompt_batch(
                 path=job.path,
                 line=job.line,
             ) from exc
+        traces.append(recorded)
+        if on_recorded is not None:
+            on_recorded(recorded)
     return traces
 
 

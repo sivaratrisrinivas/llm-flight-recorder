@@ -152,7 +152,7 @@ llmfr inspect examples/demo/demo1_a.jsonl --step 0
 
 `--greedy` on both records is the identical path (exit 0). `llmfr inspect TRACE --step N` shows history vs visible context plus that step's top-k. `llmfr replay TRACE_ID` needs a store id. Exit 0 means compare traces identical, or replay status `reproduced`. Exit 1 is an expected failure (including a diverged compare). Exit 2 is a usage error. `llmfr --help` lists the rest (`validate`, `topk`, `version`).
 
-Batch-record many prompts in one call (one `trace_id` per stdout line). `.jsonl` is one JSON object per line with a `prompt` field; `.txt` is one prompt per line. `--redact` and `--no-persist` apply to every item. Schema: `docs/adr/0010-batch-record.md`.
+Batch-record many prompts in one call. Each `trace_id` is printed as that item succeeds, so a later failure still leaves earlier IDs on stdout. `.jsonl` is one JSON object per line with a `prompt` field; `.txt` is one prompt per line. `--redact` and `--no-persist` apply to every item. Schema: `docs/adr/0010-batch-record.md`.
 
 ```bash
 printf '%s\n' '{"prompt":"Hello"}' '{"prompt":"How many sheep are left?"}' > prompts.jsonl

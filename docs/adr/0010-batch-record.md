@@ -45,11 +45,14 @@ the environment.
 
    **Other suffixes** (including `.txt`) — one prompt per line.
 
-3. **Output.** Exit 0 prints one `trace_id` per prompt, in file order, one
-   per stdout line. Each trace is tagged `batch_index` (`"0"`, `"1"`, …).
-   The first failing item stops the batch (fail closed). Items already
-   written stay in the store. `--redact` and `--no-persist` apply to every
-   item the same way they do for a single record.
+3. **Output.** Each successful item prints its `trace_id` on stdout
+   immediately (one line, flushed) before the next item starts. Exit 0
+   means every item succeeded. The first failing item stops the batch
+   (fail closed, exit 1); IDs already printed stay on stdout so a caller
+   does not re-run the whole file blindly, and items already written stay
+   in the store. Each trace is tagged `batch_index` (`"0"`, `"1"`, …).
+   `--redact` and `--no-persist` apply to every item the same way they do
+   for a single record.
 
 4. **Honesty is unchanged.** Hugging Face remains the default. OpenAI is
    selected only with `--provider openai` or an `openai:` model prefix;
@@ -72,5 +75,8 @@ the environment.
   for the same flags and honesty rules.
 - Continue after a failed item: more traces, but easier to miss a fail-closed
   OpenAI response in a long file.
+- Buffer every `trace_id` until the batch finishes: a mid-batch failure
+  would leave stdout empty even though earlier items were stored, so a
+  caller would re-run the whole file blindly.
 - Per-line `provider` / `model` / `api_key`: invites silent backend switches
   and keys in files.

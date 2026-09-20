@@ -290,10 +290,12 @@ def record(
     """Record a short generation into TraceStore and print trace_id.
 
     Pass PROMPT for one run, or --prompts FILE for a batch (one trace_id per
-    prompt, in file order). Exit 0 on success. Exit 1 for expected failures
-    (missing Hugging Face extra, missing OPENAI_API_KEY, invalid config, I/O,
-    empty or invalid prompt file). Does not invent logits. Does not accept
-    an API key flag. --redact and --no-persist apply to every batch item.
+    prompt, flushed as each item succeeds). A mid-batch failure still leaves
+    already-printed IDs on stdout. Exit 0 on success. Exit 1 for expected
+    failures (missing Hugging Face extra, missing OPENAI_API_KEY, invalid
+    config, I/O, empty or invalid prompt file). Does not invent logits. Does
+    not accept an API key flag. --redact and --no-persist apply to every
+    batch item.
     """
     raise typer.Exit(
         _cmd_record(
@@ -437,7 +439,7 @@ def _cmd_record(
         store_obj = None if not persist else TraceStore(Path(store), create=True)
         redactor = redact_trace if redact else None
         if jobs is not None:
-            traces = record_prompt_batch(
+            record_prompt_batch(
                 adapter,
                 jobs,
                 generation=generation,
@@ -447,9 +449,8 @@ def _cmd_record(
                 source="cli",
                 persist=persist,
                 redact=redactor,
+                on_recorded=_write_trace_id,
             )
-            for recorded in traces:
-                sys.stdout.write(f"{recorded.run_metadata.trace_id}\n")
             return EXIT_OK
         assert prompt is not None
         recorded = record_generation(
@@ -465,7 +466,7 @@ def _cmd_record(
         )
     except _RECORD_ERRORS as exc:
         return _fail(exc)
-    sys.stdout.write(f"{recorded.run_metadata.trace_id}\n")
+    _write_trace_id(recorded)
     return EXIT_OK
 
 
@@ -626,6 +627,11 @@ def _load_trace(path: str) -> Trace | int:
         return load_path(path)
     except _LOAD_ERRORS as exc:
         return _fail(exc)
+
+
+def _write_trace_id(trace: Trace) -> None:
+    sys.stdout.write(f"{trace.run_metadata.trace_id}\n")
+    sys.stdout.flush()
 
 
 def _fail(exc: BaseException | str) -> int:
