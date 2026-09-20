@@ -174,5 +174,5 @@ OpenAI is an optional extra, not the default. `pip install -e '.[openai]'`, set 
 - Callers can redact prompt, output, sampled-token strings, top-k token strings, and context text before write (`redact_trace`, `llmfr record --redact`) or skip the store (`persist=False`, `--no-persist`). Those flags apply to every `--prompts` item. Local persist stays the default.
 - If a backend does not expose real logits or logprobs, llmfr does not invent scores. OpenAI recording fails closed when the API omits per-token logprob content.
 - v1 does not claim a compare UI, full-vocab hosted-API logits, LangChain, or a Kafka/Redis/Postgres store. OpenAI `top_logprobs` are stored when the API returns them; they are not raw logits and do not make hosted replay bit-identical. Known limits and a short roadmap: `docs/demo.md`.
-- Measured finding (null): on N=8 `Qwen/Qwen2.5-0.5B-Instruct` items, sampling splits and decoding-config splits had the same 3/8 correctness-disagreement rate. Table, grading rule, and limits: `docs/findings/gs-t22n.md`.
+- Measured finding (null at N=30): on `Qwen/Qwen2.5-0.5B-Instruct`, sampling splits disagreed on correctness 10/30 and decoding-config splits 13/30. Table, grading, limits: `docs/findings/gs-t22q.md`.
 - Design notes (do not duplicate here): `docs/adr/`.

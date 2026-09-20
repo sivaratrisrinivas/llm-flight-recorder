@@ -16,7 +16,6 @@ REPO = Path(__file__).resolve().parents[1]
 SCRIPT = REPO / "scripts" / "gs_t22n_divergence_accuracy.py"
 FINDING_MD = REPO / "docs" / "findings" / "gs-t22n.md"
 RESULTS_JSON = REPO / "docs" / "findings" / "gs-t22n-results.json"
-README = REPO / "README.md"
 
 
 def _load_script() -> ModuleType:
@@ -200,9 +199,6 @@ def test_checked_in_finding_matches_results_json() -> None:
     finding = FINDING_MD.read_text(encoding="utf-8")
     rendered = script.render_finding(payload)
     assert finding == rendered
-    readme = README.read_text(encoding="utf-8")
-    assert "docs/findings/gs-t22n.md" in readme
-    assert "Measured finding (null)" in readme
     assert PORTFOLIO_DEMO_MODEL_ID in finding
     assert "tiny-gpt2" in finding
     summary = payload["summary"]
