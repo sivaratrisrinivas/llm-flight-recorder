@@ -310,6 +310,10 @@ def test_checked_in_finding_matches_results_json() -> None:
     assert payload["max_new_tokens"] == script.DEFAULT_MAX_NEW_TOKENS
     finding = FINDING_MD.read_text(encoding="utf-8")
     assert finding == script.render_finding(recomputed)
+    assert script.FAKE_SMOKE_COMMAND in finding
+    assert "--results /tmp/llmfr-gs-t22s-fake/results.json" in finding
+    assert "--finding /tmp/llmfr-gs-t22s-fake/finding.md" in finding
+    assert "--out /tmp/llmfr-gs-t22s-fake" in finding
     assert PORTFOLIO_DEMO_MODEL_ID in finding
     assert PORTFOLIO_DEMO_MODEL_REVISION in finding
     assert "tiny-gpt2" in finding

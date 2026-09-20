@@ -68,6 +68,12 @@ PERCENTILE_METHOD = (
     "nearest-rank: rank = ceil(p/100 * n), value = sorted[rank-1]. "
     "With N=11, p99 is the maximum timed trial."
 )
+FAKE_SMOKE_COMMAND = (
+    "python scripts/gs_t22s_latency.py --backend fake "
+    "--out /tmp/llmfr-gs-t22s-fake "
+    "--results /tmp/llmfr-gs-t22s-fake/results.json "
+    "--finding /tmp/llmfr-gs-t22s-fake/finding.md"
+)
 
 _COMPARE_EXIT = frozenset({0, 1})
 _OK_EXIT = frozenset({0})
@@ -610,7 +616,7 @@ def render_finding(results: Mapping[str, Any]) -> str:
         "CI smoke (fake adapter; must not overwrite this finding):",
         "",
         "```bash",
-        "python scripts/gs_t22s_latency.py --backend fake --out /tmp/llmfr-gs-t22s-fake",
+        FAKE_SMOKE_COMMAND,
         "```",
         "",
         "Raw JSON: `docs/findings/gs-t22s-results.json`.",

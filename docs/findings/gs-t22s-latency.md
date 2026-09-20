@@ -41,7 +41,7 @@ python scripts/gs_t22s_latency.py --backend hf --write-docs
 CI smoke (fake adapter; must not overwrite this finding):
 
 ```bash
-python scripts/gs_t22s_latency.py --backend fake --out /tmp/llmfr-gs-t22s-fake
+python scripts/gs_t22s_latency.py --backend fake --out /tmp/llmfr-gs-t22s-fake --results /tmp/llmfr-gs-t22s-fake/results.json --finding /tmp/llmfr-gs-t22s-fake/finding.md
 ```
 
 Raw JSON: `docs/findings/gs-t22s-results.json`.
