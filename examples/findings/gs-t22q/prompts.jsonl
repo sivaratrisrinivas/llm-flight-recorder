@@ -1,0 +1,30 @@
+{"id": "sheep_trick", "prompt": "A farmer has 17 sheep. All but 9 run away. How many sheep are left? Think step by step, then give the final number.", "gold": 9}
+{"id": "seven_plus_five", "prompt": "What is 7 plus 5? Think step by step, then give the final number.", "gold": 12}
+{"id": "twelve_minus_four", "prompt": "What is 12 minus 4? Think step by step, then give the final number.", "gold": 8}
+{"id": "three_times_six", "prompt": "What is 3 times 6? Think step by step, then give the final number.", "gold": 18}
+{"id": "cows_sold", "prompt": "A farmer has 10 cows. He sells 3. How many cows remain? Think step by step, then give the final number.", "gold": 7}
+{"id": "hundred_div_four", "prompt": "What is 100 divided by 4? Think step by step, then give the final number.", "gold": 25}
+{"id": "apples_left", "prompt": "There are 8 apples. You eat 2. How many apples are left? Think step by step, then give the final number.", "gold": 6}
+{"id": "two_plus_two", "prompt": "What is 2 plus 2? Think step by step, then give the final number.", "gold": 4}
+{"id": "nine_plus_eight", "prompt": "What is 9 plus 8? Think step by step, then give the final number.", "gold": 17}
+{"id": "twenty_minus_six", "prompt": "What is 20 minus 6? Think step by step, then give the final number.", "gold": 14}
+{"id": "five_times_four", "prompt": "What is 5 times 4? Think step by step, then give the final number.", "gold": 20}
+{"id": "fifty_div_five", "prompt": "What is 50 divided by 5? Think step by step, then give the final number.", "gold": 10}
+{"id": "eggs_left", "prompt": "There are 12 eggs. You use 4. How many eggs are left? Think step by step, then give the final number.", "gold": 8}
+{"id": "birds_remain", "prompt": "A tree has 9 birds. 4 fly away. How many birds remain? Think step by step, then give the final number.", "gold": 5}
+{"id": "three_plus_eleven", "prompt": "What is 3 plus 11? Think step by step, then give the final number.", "gold": 14}
+{"id": "thirty_minus_ten", "prompt": "What is 30 minus 10? Think step by step, then give the final number.", "gold": 20}
+{"id": "two_times_nine", "prompt": "What is 2 times 9? Think step by step, then give the final number.", "gold": 18}
+{"id": "eighty_div_ten", "prompt": "What is 80 divided by 10? Think step by step, then give the final number.", "gold": 8}
+{"id": "books_left", "prompt": "There are 15 books. You lend 8. How many books are left? Think step by step, then give the final number.", "gold": 7}
+{"id": "cookies_remain", "prompt": "A jar has 14 cookies. You eat 5. How many cookies remain? Think step by step, then give the final number.", "gold": 9}
+{"id": "six_plus_seven", "prompt": "What is 6 plus 7? Think step by step, then give the final number.", "gold": 13}
+{"id": "eighteen_minus_nine", "prompt": "What is 18 minus 9? Think step by step, then give the final number.", "gold": 9}
+{"id": "four_times_seven", "prompt": "What is 4 times 7? Think step by step, then give the final number.", "gold": 28}
+{"id": "sixty_div_three", "prompt": "What is 60 divided by 3? Think step by step, then give the final number.", "gold": 20}
+{"id": "pencils_left", "prompt": "There are 16 pencils. You give away 5. How many pencils are left? Think step by step, then give the final number.", "gold": 11}
+{"id": "chairs_remain", "prompt": "A room has 10 chairs. 6 are taken. How many chairs remain? Think step by step, then give the final number.", "gold": 4}
+{"id": "one_plus_nineteen", "prompt": "What is 1 plus 19? Think step by step, then give the final number.", "gold": 20}
+{"id": "forty_minus_fifteen", "prompt": "What is 40 minus 15? Think step by step, then give the final number.", "gold": 25}
+{"id": "eight_times_three", "prompt": "What is 8 times 3? Think step by step, then give the final number.", "gold": 24}
+{"id": "ninety_div_nine", "prompt": "What is 90 divided by 9? Think step by step, then give the final number.", "gold": 10}
