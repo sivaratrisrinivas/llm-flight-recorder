@@ -174,5 +174,41 @@ OpenAI is an optional extra, not the default. `pip install -e '.[openai]'`, set 
 - Callers can redact prompt, output, sampled-token strings, top-k token strings, and context text before write (`redact_trace`, `llmfr record --redact`) or skip the store (`persist=False`, `--no-persist`). Those flags apply to every `--prompts` item. Local persist stays the default.
 - If a backend does not expose real logits or logprobs, llmfr does not invent scores. OpenAI recording fails closed when the API omits per-token logprob content.
 - v1 does not claim a compare UI, full-vocab hosted-API logits, LangChain, or a Kafka/Redis/Postgres store. OpenAI `top_logprobs` are stored when the API returns them; they are not raw logits and do not make hosted replay bit-identical. Known limits and a short roadmap: `docs/demo.md`.
-- Measured finding (null at N=30): on `Qwen/Qwen2.5-0.5B-Instruct`, sampling splits disagreed on correctness 10/30 and decoding-config splits 13/30. Table, grading, limits: `docs/findings/gs-t22q.md`.
 - Design notes (do not duplicate here): `docs/adr/`.
+
+## Findings
+
+On N=30 `Qwen/Qwen2.5-0.5B-Instruct` items, sampling and decoding-config splits did not separate on this correctness-disagreement count (GS-T22n 2x descriptive label: null). First-divergence class is still a useful debug label; it did not predict wrong-answer disagreement here.
+
+[![N=30](https://img.shields.io/badge/N-30-0ea5e9)](docs/findings/gs-t22q.md)
+[![Qwen2.5-0.5B-Instruct](https://img.shields.io/badge/model-Qwen2.5--0.5B--Instruct-3b82f6)](docs/findings/gs-t22q.md)
+[![sampling disagree 10/30](https://img.shields.io/badge/sampling_disagree-10%2F30-eab308)](docs/findings/gs-t22q.md)
+[![decoding-config disagree 13/30](https://img.shields.io/badge/decoding--config_disagree-13%2F30-f97316)](docs/findings/gs-t22q.md)
+[![descriptive null](https://img.shields.io/badge/descriptive-null-6b7280)](docs/findings/gs-t22q.md)
+
+```mermaid
+flowchart LR
+  n30["N=30"]
+  qwen["Qwen2.5-0.5B-Instruct"]
+  samp["sampling disagree 10/30"]
+  dec["decoding-config disagree 13/30"]
+  lab["descriptive null"]
+  n30 --> samp
+  n30 --> dec
+  qwen --> samp
+  qwen --> dec
+  samp --> lab
+  dec --> lab
+  classDef nFill fill:#e0f2fe,stroke:#0284c7,color:#0c4a6e
+  classDef modelFill fill:#dbeafe,stroke:#2563eb,color:#1e3a8a
+  classDef sampFill fill:#fef3c7,stroke:#d97706,color:#78350f
+  classDef decFill fill:#ffedd5,stroke:#ea580c,color:#7c2d12
+  classDef labFill fill:#f3f4f6,stroke:#4b5563,color:#111827
+  class n30 nFill
+  class qwen modelFill
+  class samp sampFill
+  class dec decFill
+  class lab labFill
+```
+
+Full table, grading, and limits: [`docs/findings/gs-t22q.md`](docs/findings/gs-t22q.md). Raw JSON: [`docs/findings/gs-t22q-results.json`](docs/findings/gs-t22q-results.json).

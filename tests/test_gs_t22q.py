@@ -29,6 +29,46 @@ RESULTS_JSON = REPO / "docs" / "findings" / "gs-t22q-results.json"
 README = REPO / "README.md"
 T22N_TRACES = REPO / "examples" / "findings" / "gs-t22n"
 TARGET_N = 30
+FINDING_MD_LINK = "docs/findings/gs-t22q.md"
+FINDING_JSON_LINK = "docs/findings/gs-t22q-results.json"
+
+
+def _assert_readme_findings(readme: str, payload: dict) -> None:
+    headings = [line[3:].strip() for line in readme.splitlines() if line.startswith("## ")]
+    assert "Findings" in headings
+    finding_start = readme.index("## Findings")
+    finding = readme[finding_start:]
+    next_heading = finding.find("\n## ", 1)
+    if next_heading != -1:
+        finding = finding[:next_heading]
+    sampling = payload["summary"]["by_class"]["sampling"]
+    decoding = payload["summary"]["by_class"]["decoding config"]
+    n_items = int(payload["n_items"])
+    samp_disagree = int(sampling["disagree"])
+    dec_disagree = int(decoding["disagree"])
+    verdict = str(payload["summary"]["descriptive_verdict"])
+    assert n_items == TARGET_N
+    assert f"N={n_items}" in finding
+    assert str(payload["model"]) in finding
+    assert f"{samp_disagree}/{n_items}" in finding
+    assert f"{dec_disagree}/{n_items}" in finding
+    assert verdict == "null"
+    assert "descriptive" in finding
+    assert "null" in finding
+    assert FINDING_MD_LINK in finding
+    assert FINDING_JSON_LINK in finding
+    assert "img.shields.io/badge" in finding
+    assert "classDef" in finding
+    assert "fill:#" in finding
+    assert "bgcolor" not in finding.lower()
+    assert "<td" not in finding.lower()
+    assert "Pair detail" not in finding
+    assert "chairs_remain" not in finding
+    assert "outcome `" not in finding
+    assert "Changelog" not in finding
+    essentials = readme[readme.index("## Essentials") : finding_start]
+    assert "Measured finding" not in essentials
+    assert FINDING_JSON_LINK not in essentials
 
 
 def _load_script() -> ModuleType:
@@ -161,7 +201,7 @@ def test_checked_in_finding_matches_results_json() -> None:
     finding = FINDING_MD.read_text(encoding="utf-8")
     assert finding == script.render_finding(payload)
     readme = README.read_text(encoding="utf-8")
-    assert "docs/findings/gs-t22q.md" in readme
+    _assert_readme_findings(readme, payload)
     assert PORTFOLIO_DEMO_MODEL_ID in finding
     assert PORTFOLIO_DEMO_MODEL_REVISION in finding
     assert "tiny-gpt2" in finding
