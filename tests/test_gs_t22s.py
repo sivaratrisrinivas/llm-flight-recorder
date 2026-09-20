@@ -48,6 +48,15 @@ def test_nearest_rank_percentile() -> None:
     assert stats["p99_s"] == 11.0
     assert stats["min_s"] == 1.0
     assert stats["max_s"] == 11.0
+    assert stats["percentile_method"] == script.PERCENTILE_METHOD
+    assert script.percentile_method_text(11) == script.PERCENTILE_METHOD
+    assert "With N=11, p99 is the maximum timed trial." in script.PERCENTILE_METHOD
+    three = script.percentile_method_text(3)
+    assert "With N=3, p99 is the maximum timed trial." in three
+    assert "N=11" not in three
+    one = script.percentile_method_text(1)
+    assert "With N=1, p99 is the maximum timed trial." in one
+    assert "N=11" not in one
     with pytest.raises(ValueError, match="at least one"):
         script.percentile([], 50)
     with pytest.raises(ValueError, match="expected 11"):
@@ -176,6 +185,15 @@ def test_fake_backend_scratch_writes_labeled_finding_not_docs(
     assert "Smoke/container capture" in captured.out
     assert "Not the portfolio Qwen table." in captured.out
     assert script.readme_latency_line(payload).startswith("Smoke/container capture")
+    assert payload["percentile_method"] == script.percentile_method_text(3)
+    assert "With N=3, p99 is the maximum timed trial." in payload["percentile_method"]
+    assert "N=11" not in payload["percentile_method"]
+    assert "With N=3, p99 is the maximum timed trial." in finding_text
+    assert "With N=11, p99 is the maximum timed trial." not in finding_text
+    assert "python scripts/gs_t22s_latency.py --backend hf --write-docs" not in finding_text
+    assert "Raw JSON: `docs/findings/gs-t22s-results.json`" not in finding_text
+    assert "CI smoke (fake adapter; must not overwrite this finding)" not in finding_text
+    assert "python scripts/gs_t22s_latency.py --backend hf --write-docs" not in captured.out
     for name in ("record", "compare", "study"):
         row = payload["commands"][name]
         assert len(row["samples_s"]) == 3
@@ -390,4 +408,10 @@ def test_readme_latency_line_gates_qwen_wording_on_portfolio_pin() -> None:
     assert "They are not the table above" not in rendered_smoke
     assert "0.5B-class instruct model" not in rendered_smoke
     assert "smoke/container capture" in rendered_smoke
+    assert "python scripts/gs_t22s_latency.py --backend hf --write-docs" not in rendered_smoke
+    assert "Raw JSON: `docs/findings/gs-t22s-results.json`" not in rendered_smoke
+    assert "CI smoke (fake adapter; must not overwrite this finding)" not in rendered_smoke
+    no_footer = script.render_finding(recomputed, docs_footer=False)
+    assert "python scripts/gs_t22s_latency.py --backend hf --write-docs" not in no_footer
+    assert "Raw JSON: `docs/findings/gs-t22s-results.json`" not in no_footer
     assert FINDING_MD.read_text(encoding="utf-8") == script.render_finding(recomputed)

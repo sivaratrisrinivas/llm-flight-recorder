@@ -64,10 +64,21 @@ DEFAULT_MAX_NEW_TOKENS = 16
 FAKE_WARMUP = 1
 FAKE_TRIALS = 3
 FAKE_MAX_NEW_TOKENS = 4
-PERCENTILE_METHOD = (
-    "nearest-rank: rank = ceil(p/100 * n), value = sorted[rank-1]. "
-    "With N=11, p99 is the maximum timed trial."
-)
+
+
+def percentile_method_text(n_trials: int) -> str:
+    n = int(n_trials)
+    if n < 1:
+        raise ValueError(f"n_trials must be >= 1, got {n}")
+    rank99 = math.ceil(99 / 100.0 * n)
+    if rank99 == n:
+        n_note = f"With N={n}, p99 is the maximum timed trial."
+    else:
+        n_note = f"With N={n}, p99 is nearest-rank {rank99} of {n}."
+    return "nearest-rank: rank = ceil(p/100 * n), value = sorted[rank-1]. " + n_note
+
+
+PERCENTILE_METHOD = percentile_method_text(DEFAULT_TRIALS)
 FAKE_SMOKE_COMMAND = (
     "python scripts/gs_t22s_latency.py --backend fake "
     "--out /tmp/llmfr-gs-t22s-fake "
@@ -114,7 +125,7 @@ def summarize_samples(samples: Sequence[float], *, warmup: int, n_trials: int) -
         "mean_s": sum(values) / len(values),
         "p50_s": percentile(values, 50),
         "p99_s": percentile(values, 99),
-        "percentile_method": PERCENTILE_METHOD,
+        "percentile_method": percentile_method_text(n_trials),
     }
 
 
@@ -462,7 +473,7 @@ def run_benchmark(
         "n_trials": n_trials,
         "max_new_tokens": max_new_tokens,
         "capture_k": CAPTURE_K,
-        "percentile_method": PERCENTILE_METHOD,
+        "percentile_method": percentile_method_text(n_trials),
         "hardware": _hardware(),
         "library_versions": _library_versions() if backend != "fake" else {"llmfr": LLMFR_VERSION},
         "prompt": PROMPT,
@@ -545,7 +556,7 @@ def recompute_payload(payload: Mapping[str, Any]) -> dict[str, Any]:
             merged["displayed_command"] = "llmfr " + shlex.join(list(argv))
         recomputed[name] = merged
     updated["commands"] = recomputed
-    updated["percentile_method"] = PERCENTILE_METHOD
+    updated["percentile_method"] = percentile_method_text(n_trials)
     return updated
 
 
@@ -605,7 +616,7 @@ def readme_latency_line(results: Mapping[str, Any]) -> str:
     )
 
 
-def render_finding(results: Mapping[str, Any]) -> str:
+def render_finding(results: Mapping[str, Any], *, docs_footer: bool | None = None) -> str:
     rec = results["commands"]["record"]
     cmp_ = results["commands"]["compare"]
     study = results["commands"]["study"]
@@ -660,6 +671,27 @@ def render_finding(results: Mapping[str, Any]) -> str:
             f"- The 1-item / {results['max_new_tokens']}-token study workload is not GS-T22q",
             "  (N=30, 64 tokens).",
         ]
+    if docs_footer is None:
+        docs_footer = is_portfolio_capture(results)
+    docs_block: list[str] = []
+    if docs_footer:
+        docs_block = [
+            "Re-run:",
+            "",
+            "```bash",
+            "python scripts/gs_t22s_latency.py --backend hf --write-docs",
+            "```",
+            "",
+            "CI smoke (fake adapter; must not overwrite this finding):",
+            "",
+            "```bash",
+            FAKE_SMOKE_COMMAND,
+            "```",
+            "",
+            "Raw JSON: `docs/findings/gs-t22s-results.json`.",
+            "Study prompt: `examples/findings/gs-t22s/prompts.jsonl`.",
+            "",
+        ]
     lines = [
         "# GS-T22s: CLI wall-clock latency (p50/p99)",
         "",
@@ -675,7 +707,7 @@ def render_finding(results: Mapping[str, Any]) -> str:
         f"- **Warmup:** {results['warmup']} discarded invocations per command",
         "  (not included in p50/p99).",
         f"- **N trials:** {results['n_trials']} timed invocations per command.",
-        f"- **Percentile:** {results['percentile_method']}",
+        f"- **Percentile:** {percentile_method_text(int(results['n_trials']))}",
         f"- **Clock:** `time.perf_counter` around `{results['timing_mode']}`",
         "  `python -m llmfr ...` (same interpreter as `llmfr`).",
         f"- **Model:** `{results['model']}` revision `{results['revision']}`.",
@@ -692,21 +724,7 @@ def render_finding(results: Mapping[str, Any]) -> str:
         f"- **Library versions:** {results['library_versions']}",
         f"- **Backend:** `{results['backend']}` (`{results['timing_mode']}`).",
         "",
-        "Re-run:",
-        "",
-        "```bash",
-        "python scripts/gs_t22s_latency.py --backend hf --write-docs",
-        "```",
-        "",
-        "CI smoke (fake adapter; must not overwrite this finding):",
-        "",
-        "```bash",
-        FAKE_SMOKE_COMMAND,
-        "```",
-        "",
-        "Raw JSON: `docs/findings/gs-t22s-results.json`.",
-        "Study prompt: `examples/findings/gs-t22s/prompts.jsonl`.",
-        "",
+        *docs_block,
         "## Result",
         "",
         "Measured seconds. min/max are from the same timed trials as p50/p99.",
@@ -865,7 +883,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         if scratch_cm is not None:
             scratch_cm.cleanup()
 
-    body = render_finding(payload)
+    body = render_finding(payload, docs_footer=args.write_docs)
     text = body if args.write_docs else container_preamble(payload) + body
     sys.stdout.write(text)
     if not text.endswith("\n"):
