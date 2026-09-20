@@ -103,6 +103,10 @@ def test_readme_is_what_why_how_essentials_only() -> None:
     assert "Llama-3.2-1B-Instruct" in text
     assert "HF_TOKEN" in text
     assert "Think step by step" in text
+    assert "--prompts" in text
+    assert "prompts.jsonl" in text
+    assert "docs/adr/0010-batch-record.md" in text
+    assert "as that item succeeds" in text
 
 
 def test_demo_markdown_embeds_captured_reports() -> None:

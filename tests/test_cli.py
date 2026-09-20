@@ -283,6 +283,10 @@ def test_cli_record_replay_compare_help(capsys: CaptureFixture[str]) -> None:
     assert "looks like an API name" not in record_help
     assert "--model" in record_help
     assert "--revision" in record_help
+    assert "--prompts" in record_help
+    assert "JSONL" in record_help or "jsonl" in record_help
+    assert "succeeds" in record_help
+    assert "--api-key" not in record_help
 
 
 def test_cli_record_twice_then_compare_identical(
