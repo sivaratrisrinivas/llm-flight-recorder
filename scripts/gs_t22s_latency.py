@@ -74,6 +74,13 @@ FAKE_SMOKE_COMMAND = (
     "--results /tmp/llmfr-gs-t22s-fake/results.json "
     "--finding /tmp/llmfr-gs-t22s-fake/finding.md"
 )
+CONTAINER_PREAMBLE = (
+    "Container/CI capture: backend=`{backend}` model=`{model}` "
+    "revision=`{revision}`. Timings below were measured in this run. "
+    "They are not the checked-in portfolio Qwen table "
+    "(`docs/findings/gs-t22s-latency.md`) unless this was "
+    "`--backend hf --write-docs` on the finding hardware."
+)
 
 _COMPARE_EXIT = frozenset({0, 1})
 _OK_EXIT = frozenset({0})
@@ -534,6 +541,37 @@ def recompute_payload(payload: Mapping[str, Any]) -> dict[str, Any]:
     return updated
 
 
+def container_preamble(results: Mapping[str, Any]) -> str:
+    revision = results.get("revision")
+    return (
+        CONTAINER_PREAMBLE.format(
+            backend=results.get("backend"),
+            model=results.get("model"),
+            revision="none" if revision in (None, "") else revision,
+        )
+        + "\n\n"
+    )
+
+
+def write_capture_outputs(
+    *,
+    payload: Mapping[str, Any],
+    finding_text: str,
+    results_path: Path,
+    finding_path: Path,
+    write_docs: bool,
+) -> None:
+    if write_docs:
+        _write_json(results_path, payload)
+        finding_path.write_text(finding_text, encoding="utf-8")
+        return
+    if not _docs_bound(results_path):
+        _write_json(results_path, payload)
+    if not _docs_bound(finding_path):
+        finding_path.parent.mkdir(parents=True, exist_ok=True)
+        finding_path.write_text(finding_text, encoding="utf-8")
+
+
 def readme_latency_line(results: Mapping[str, Any]) -> str:
     rec = results["commands"]["record"]
     cmp_ = results["commands"]["compare"]
@@ -784,7 +822,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         if scratch_cm is not None:
             scratch_cm.cleanup()
 
-    text = render_finding(payload)
+    body = render_finding(payload)
+    text = body if args.write_docs else container_preamble(payload) + body
     sys.stdout.write(text)
     if not text.endswith("\n"):
         sys.stdout.write("\n")
@@ -798,10 +837,21 @@ def main(argv: Sequence[str] | None = None) -> int:
         except ValueError as exc:
             sys.stderr.write(f"error: {exc}\n")
             return 2
-        _write_json(results_path, payload)
-        finding_path.write_text(text, encoding="utf-8")
-    elif args.backend != "hf":
-        _write_json(results_path, payload)
+        write_capture_outputs(
+            payload=payload,
+            finding_text=body,
+            results_path=results_path,
+            finding_path=finding_path,
+            write_docs=True,
+        )
+    else:
+        write_capture_outputs(
+            payload=payload,
+            finding_text=text,
+            results_path=results_path,
+            finding_path=finding_path,
+            write_docs=False,
+        )
     return 0
 
 

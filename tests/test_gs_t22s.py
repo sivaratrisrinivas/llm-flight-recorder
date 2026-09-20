@@ -120,7 +120,7 @@ def test_fake_backend_refuses_docs_bound_paths(
     assert "refusing to overwrite docs/findings" in err_results
 
 
-def test_fake_backend_scratch_runs_without_writing_finding(
+def test_fake_backend_scratch_writes_labeled_finding_not_docs(
     capsys: pytest.CaptureFixture[str], tmp_path: Path
 ) -> None:
     script = _load_script()
@@ -147,7 +147,7 @@ def test_fake_backend_scratch_runs_without_writing_finding(
         ]
     )
     assert code == 0
-    capsys.readouterr()
+    captured = capsys.readouterr()
     payload = json.loads(results.read_text(encoding="utf-8"))
     assert payload["backend"] == "fake"
     assert payload["model"] == "fake-lm"
@@ -156,7 +156,15 @@ def test_fake_backend_scratch_runs_without_writing_finding(
     assert payload["n_trials"] == 3
     assert payload["timing_mode"] == "in-process-cli"
     assert payload["model"] != PORTFOLIO_DEMO_MODEL_ID
-    assert not finding.is_file()
+    assert finding.is_file()
+    finding_text = finding.read_text(encoding="utf-8")
+    preamble = script.container_preamble(payload)
+    assert finding_text.startswith(preamble)
+    assert "Container/CI capture" in finding_text
+    assert "backend=`fake`" in finding_text
+    assert "model=`fake-lm`" in finding_text
+    assert FINDING_MD_LINK in finding_text
+    assert captured.out.startswith(preamble)
     for name in ("record", "compare", "study"):
         row = payload["commands"][name]
         assert len(row["samples_s"]) == 3
@@ -170,6 +178,7 @@ def test_fake_backend_scratch_runs_without_writing_finding(
         assert not FINDING_MD.is_file()
     else:
         assert FINDING_MD.read_text(encoding="utf-8") == finding_before
+        assert FINDING_MD.read_text(encoding="utf-8") != finding_text
     if results_before is None:
         assert not RESULTS_JSON.is_file()
     else:

@@ -1,0 +1,125 @@
+name: container-bench
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      backend:
+        description: >-
+          Latency backend. fake is the default CI path (no model download).
+          tiny-gpt2 and hf build the CPU-torch image; hf downloads Qwen.
+        type: choice
+        options:
+          - fake
+          - tiny-gpt2
+          - hf
+        default: fake
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    if: github.event_name != 'workflow_dispatch' || github.event.inputs.backend == 'fake'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build smoke image
+        run: docker build --target smoke -t llmfr:smoke .
+      - name: Run fake latency job
+        run: |
+          mkdir -p out
+          docker run --rm -v "$PWD/out:/out" llmfr:smoke
+      - name: Check artifacts
+        run: |
+          test -s out/results.json
+          test -s out/finding.md
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          payload = json.loads(Path("out/results.json").read_text(encoding="utf-8"))
+          assert payload["backend"] == "fake", payload["backend"]
+          assert payload["model"] == "fake-lm", payload["model"]
+          finding = Path("out/finding.md").read_text(encoding="utf-8")
+          assert "Container/CI capture" in finding
+          assert "backend=`fake`" in finding
+          print("backend", payload["backend"], "model", payload["model"])
+          print("warmup", payload["warmup"], "n_trials", payload["n_trials"])
+          for name, row in payload["commands"].items():
+              print(name, "p50", row["p50_s"], "p99", row["p99_s"])
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gs-t26-latency-fake
+          path: |
+            out/results.json
+            out/finding.md
+          if-no-files-found: error
+
+  live:
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.backend != 'fake'
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+      - name: Cache Hugging Face hub
+        uses: actions/cache@v4
+        with:
+          path: hf-cache
+          key: ${{ runner.os }}-container-hf-${{ github.event.inputs.backend }}
+      - name: Build hf image
+        run: docker build --target hf -t llmfr:hf .
+      - name: Run live latency job
+        env:
+          BACKEND: ${{ github.event.inputs.backend }}
+        run: |
+          mkdir -p out hf-cache
+          if [ "$BACKEND" = "hf" ]; then
+            TOKENS=16
+          else
+            TOKENS=4
+          fi
+          docker run --rm \
+            -v "$PWD/out:/out" \
+            -v "$PWD/hf-cache:/root/.cache/huggingface" \
+            llmfr:hf \
+            --backend "$BACKEND" \
+            --warmup 0 \
+            --trials 1 \
+            --max-new-tokens "$TOKENS"
+      - name: Check artifacts
+        env:
+          BACKEND: ${{ github.event.inputs.backend }}
+        run: |
+          test -s out/results.json
+          test -s out/finding.md
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          backend = os.environ["BACKEND"]
+          payload = json.loads(Path("out/results.json").read_text(encoding="utf-8"))
+          assert payload["backend"] == backend, payload["backend"]
+          if backend == "hf":
+              assert payload["model"] == "Qwen/Qwen2.5-0.5B-Instruct", payload["model"]
+          elif backend == "tiny-gpt2":
+              assert "tiny-gpt2" in str(payload["model"])
+          finding = Path("out/finding.md").read_text(encoding="utf-8")
+          assert "Container/CI capture" in finding
+          print("backend", payload["backend"], "model", payload["model"])
+          print("warmup", payload["warmup"], "n_trials", payload["n_trials"])
+          for name, row in payload["commands"].items():
+              print(name, "p50", row["p50_s"], "p99", row["p99_s"])
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gs-t26-latency-${{ github.event.inputs.backend }}
+          path: |
+            out/results.json
+            out/finding.md
+          if-no-files-found: error

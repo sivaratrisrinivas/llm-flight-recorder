@@ -21,7 +21,15 @@ DEMO_DIR = REPO / "examples" / "demo"
 FIXTURES = DEMO_DIR
 CAPTURES = DEMO_DIR
 
-README_SECTIONS = ("What", "Why", "Architecture", "How", "Essentials", "Findings")
+README_SECTIONS = (
+    "What",
+    "Why",
+    "Architecture",
+    "How",
+    "Container",
+    "Essentials",
+    "Findings",
+)
 ADR_LINKS = (
     "docs/adr/0001-v1-trace-schema.md",
     "docs/adr/0002-v1-storage.md",
