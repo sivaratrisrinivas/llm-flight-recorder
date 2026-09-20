@@ -1,0 +1,8 @@
+format=jsonl
+schema=docs/adr/0011-study.md
+n_items=8
+gold=required integer
+grading=last whole number in output_text vs gold; no LLM judge
+splits=sampling seeds 1 vs 2 (temperature 1.0); decoding-config temperatures 0.7 vs 1.2 (seed 1)
+default_max_new_tokens=64
+hf_default=sshleifer/tiny-gpt2

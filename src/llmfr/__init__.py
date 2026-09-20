@@ -86,6 +86,16 @@ from llmfr.replay import (
     replay_trace,
 )
 from llmfr.storage import DuplicateTraceIdError, TraceIndexEntry, TracePathError, TraceStore
+from llmfr.study import (
+    GRADING_RULE,
+    StudyReport,
+    extract_last_whole_number,
+    format_study_report,
+    grade_output,
+    pair_outcome,
+    run_study,
+    summarize_pairs,
+)
 
 __all__ = [
     "DEFAULT_HF_MODEL_ID",
@@ -136,6 +146,14 @@ __all__ = [
     "CompareResult",
     "compare_traces",
     "format_compare_result",
+    "GRADING_RULE",
+    "StudyReport",
+    "extract_last_whole_number",
+    "format_study_report",
+    "grade_output",
+    "pair_outcome",
+    "run_study",
+    "summarize_pairs",
     "REDACTED",
     "DuplicateTraceIdError",
     "TracePathError",

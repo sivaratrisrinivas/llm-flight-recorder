@@ -34,6 +34,7 @@ the environment.
    | `temperature` | float | no | Overrides `--temperature`. |
    | `max_new_tokens` | int >= 1 | no | Overrides `--max-new-tokens`. |
    | `greedy` | bool | no | Overrides `--greedy`. |
+   | `gold` | int | no | Integer answer. Stored as `run_metadata.tags["gold"]`. Required by `llmfr study`. |
    | `tags` | object of string → string | no | Merged into `run_metadata.tags`. |
 
    A JSON string per line (`"Hello"`) is the same as `{"prompt":"Hello"}`.

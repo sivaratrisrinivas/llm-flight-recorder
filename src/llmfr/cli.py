@@ -46,13 +46,26 @@ from llmfr.privacy import redact_trace
 from llmfr.record import load_prompt_file, record_generation, record_prompt_batch
 from llmfr.replay import BIT_IDENTICAL_CAVEAT, ReplayResult, replay_trace
 from llmfr.storage import TraceStore
+from llmfr.study import (
+    DEFAULT_DECODING_SEED,
+    DEFAULT_DECODING_TEMPERATURES,
+    DEFAULT_SAMPLING_SEEDS,
+    DEFAULT_SAMPLING_TEMPERATURE,
+    DEFAULT_STUDY_MAX_NEW_TOKENS,
+    format_study_report,
+    parse_float_pair,
+    parse_int_pair,
+    require_study_jobs,
+    run_study,
+)
 
 EXIT_OK = 0
 EXIT_FAIL = 1
 EXIT_USAGE = 2
 
 EXIT_CODES_HELP = (
-    "Exit codes: 0 success (compare: traces identical; replay: status reproduced); "
+    "Exit codes: 0 success (compare: traces identical; replay: status reproduced; "
+    "study: report printed); "
     "1 expected failure (missing or invalid input, compare diverged, "
     "replay not reproduced); 2 usage error (unknown command or invalid options)."
 )
@@ -83,7 +96,8 @@ app = typer.Typer(
     help=(
         "LLM Flight Recorder. Record a generation, replay a stored trace, "
         "compare two traces (first divergence vs downstream effects), "
-        "or inspect a stored trace at a step. Does not invent logits. " + EXIT_CODES_HELP
+        "inspect a stored trace at a step, or run a graded sampling vs "
+        "decoding-config study. Does not invent logits. " + EXIT_CODES_HELP
     ),
     no_args_is_help=True,
     add_completion=False,
@@ -192,7 +206,7 @@ def record(
             help=(
                 "Prompt list file. .jsonl: one JSON object or string per line "
                 "(required prompt; optional id, seed, temperature, "
-                "max_new_tokens, greedy, tags). .json: a JSON array of those, "
+                "max_new_tokens, greedy, gold, tags). .json: a JSON array of those, "
                 "or one object/string. Other files: one prompt per line. "
                 "Blank lines skipped. Mutually exclusive with PROMPT. "
                 "See docs/adr/0010-batch-record.md."
@@ -399,6 +413,151 @@ def inspect(
     raise typer.Exit(_cmd_inspect(ref=trace, store=store, step=step, as_json=as_json))
 
 
+@app.command()
+def study(
+    prompts: Annotated[
+        str,
+        typer.Argument(
+            metavar="PROMPTS",
+            help=(
+                "Prompt list file (same formats as record --prompts). JSONL/JSON "
+                "objects need integer gold. See docs/adr/0011-study.md."
+            ),
+        ),
+    ],
+    store: Annotated[
+        str,
+        typer.Option("--store", help="TraceStore directory (SQLite index plus traces/)."),
+    ] = ".llmfr",
+    max_new_tokens: Annotated[
+        int,
+        typer.Option("--max-new-tokens", help="Maximum new tokens per recorded side."),
+    ] = DEFAULT_STUDY_MAX_NEW_TOKENS,
+    seeds: Annotated[
+        str,
+        typer.Option(
+            "--seeds",
+            help="Sampling split: two comma-separated LocalRNG seeds (Hugging Face).",
+        ),
+    ] = f"{DEFAULT_SAMPLING_SEEDS[0]},{DEFAULT_SAMPLING_SEEDS[1]}",
+    temperatures: Annotated[
+        str,
+        typer.Option(
+            "--temperatures",
+            help="Decoding-config split: two comma-separated temperatures.",
+        ),
+    ] = f"{DEFAULT_DECODING_TEMPERATURES[0]},{DEFAULT_DECODING_TEMPERATURES[1]}",
+    sampling_temperature: Annotated[
+        float,
+        typer.Option(
+            "--sampling-temperature",
+            help="Shared temperature for the sampling (seed) split.",
+        ),
+    ] = DEFAULT_SAMPLING_TEMPERATURE,
+    decoding_seed: Annotated[
+        int,
+        typer.Option(
+            "--decoding-seed",
+            help="Shared seed for the decoding-config (temperature) split.",
+        ),
+    ] = DEFAULT_DECODING_SEED,
+    model: Annotated[
+        str | None,
+        typer.Option(
+            "--model",
+            help=(
+                "Hugging Face model id (default: sshleifer/tiny-gpt2). "
+                "OpenAI requires --provider openai or an openai: prefix "
+                "(openai:gpt-4o-mini)."
+            ),
+        ),
+    ] = None,
+    provider: Annotated[
+        str | None,
+        typer.Option(
+            "--provider",
+            help=(
+                "Backend: huggingface (default, local/CI) or openai. OpenAI is also "
+                f"selected when --model has an openai: prefix. Reads {OPENAI_KEY_ENV} "
+                "from the environment; there is no API-key flag."
+            ),
+        ),
+    ] = None,
+    revision: Annotated[
+        str | None,
+        typer.Option(
+            "--revision",
+            help="Hub commit SHA to pin. Default: resolve after download.",
+        ),
+    ] = None,
+    capture_k: Annotated[
+        int,
+        typer.Option("--capture-k", help="Top-k candidates stored per step (not full vocab)."),
+    ] = DEFAULT_TOP_K,
+    max_visible_tokens: Annotated[
+        int | None,
+        typer.Option(
+            "--max-visible-tokens",
+            help="Left-window size for model-visible context. Default: model max.",
+        ),
+    ] = None,
+    fmt: Annotated[
+        Literal["json", "jsonl"],
+        typer.Option("--format", help="On-disk trace format under traces/."),
+    ] = "jsonl",
+    no_persist: Annotated[
+        bool,
+        typer.Option(
+            "--no-persist",
+            help="Skip writing traces to disk. Default is local persist.",
+        ),
+    ] = False,
+    redact: Annotated[
+        bool,
+        typer.Option(
+            "--redact",
+            help=(
+                "Redact store writes after grading. Completions are graded first. "
+                "--json then omits output_text."
+            ),
+        ),
+    ] = False,
+    as_json: Annotated[
+        bool,
+        typer.Option("--json", help="Print structured study JSON instead of the table."),
+    ] = False,
+) -> None:
+    """Record sampling and decoding-config pairs, grade, and print rates.
+
+    Each prompt is recorded twice at different seeds (sampling split) and twice
+    at different temperatures (decoding-config split). Completions are graded
+    with the last whole number in output_text vs gold. No LLM judge. Hugging
+    Face is the default. OpenAI needs --provider openai or an openai: prefix
+    and fails closed without per-token logprob content. Exit 0 prints the
+    table (or JSON). Exit 1 for expected failures. Exit 2 for usage errors.
+    """
+    raise typer.Exit(
+        _cmd_study(
+            prompts=prompts,
+            store=store,
+            max_new_tokens=max_new_tokens,
+            seeds=seeds,
+            temperatures=temperatures,
+            sampling_temperature=sampling_temperature,
+            decoding_seed=decoding_seed,
+            model=model,
+            provider=provider,
+            revision=revision,
+            capture_k=capture_k,
+            max_visible_tokens=max_visible_tokens,
+            fmt=fmt,
+            persist=not no_persist,
+            redact=redact,
+            as_json=as_json,
+        )
+    )
+
+
 def _cmd_record(
     *,
     prompt: str | None,
@@ -533,6 +692,64 @@ def _cmd_inspect(*, ref: str, store: str, step: int | None, as_json: bool) -> in
         sys.stdout.write(json.dumps(inspect_overview_payload(loaded), indent=2) + "\n")
     else:
         sys.stdout.write(format_inspect_overview(loaded))
+    return EXIT_OK
+
+
+def _cmd_study(
+    *,
+    prompts: str,
+    store: str,
+    max_new_tokens: int,
+    seeds: str,
+    temperatures: str,
+    sampling_temperature: float,
+    decoding_seed: int,
+    model: str | None,
+    provider: str | None,
+    revision: str | None,
+    capture_k: int,
+    max_visible_tokens: int | None,
+    fmt: Literal["json", "jsonl"],
+    persist: bool,
+    redact: bool,
+    as_json: bool,
+) -> int:
+    try:
+        sampling_seeds = parse_int_pair(seeds, name="--seeds")
+        decoding_temperatures = parse_float_pair(temperatures, name="--temperatures")
+    except ValueError as exc:
+        return _usage(str(exc))
+    try:
+        jobs = load_prompt_file(Path(prompts))
+        require_study_jobs(jobs)
+        adapter = _build_record_adapter(
+            model_id=model,
+            provider=provider,
+            revision=revision,
+            max_visible_tokens=max_visible_tokens,
+            capture_k=capture_k,
+        )
+        report = run_study(
+            adapter,
+            jobs,
+            sampling_seeds=sampling_seeds,
+            sampling_temperature=sampling_temperature,
+            decoding_seed=decoding_seed,
+            decoding_temperatures=decoding_temperatures,
+            max_new_tokens=max_new_tokens,
+            capture_k=capture_k,
+            store=None if not persist else TraceStore(Path(store), create=True),
+            persist=persist,
+            redact=redact_trace if redact else None,
+            fmt=fmt,
+            source="cli",
+        )
+    except _RECORD_ERRORS as exc:
+        return _fail(exc)
+    if as_json:
+        sys.stdout.write(json.dumps(report.payload(), indent=2) + "\n")
+    else:
+        sys.stdout.write(format_study_report(report))
     return EXIT_OK
 
 
