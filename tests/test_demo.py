@@ -21,7 +21,7 @@ DEMO_DIR = REPO / "examples" / "demo"
 FIXTURES = DEMO_DIR
 CAPTURES = DEMO_DIR
 
-README_SECTIONS = ("What", "Why", "Architecture", "How", "Essentials")
+README_SECTIONS = ("What", "Why", "Architecture", "How", "Essentials", "Findings")
 ADR_LINKS = (
     "docs/adr/0001-v1-trace-schema.md",
     "docs/adr/0002-v1-storage.md",
@@ -45,13 +45,21 @@ def _first_mermaid_block(text: str) -> str:
     return text[body_start:end]
 
 
-def test_readme_is_what_why_how_essentials_only() -> None:
+def test_readme_shape() -> None:
     text = README.read_text(encoding="utf-8")
     headings = [line[3:].strip() for line in text.splitlines() if line.startswith("## ")]
     assert headings == list(README_SECTIONS)
     assert "Milestone" not in text
+    assert "Changelog" not in text
     assert "\u2014" not in text
     assert "\u2013" not in text
+    findings = text[text.index("## Findings") :]
+    assert "img.shields.io/badge" in findings
+    assert "classDef" in findings
+    assert "fill:#" in findings
+    assert "docs/findings/gs-t22q.md" in findings
+    assert "docs/findings/gs-t22q-results.json" in findings
+    assert "bgcolor" not in findings.lower()
     mermaid = _first_mermaid_block(text)
     assert "prompt[prompt] --> rec" in mermaid
     assert "prompt[prompt] --> adapter" not in mermaid
