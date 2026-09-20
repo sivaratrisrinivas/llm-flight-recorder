@@ -223,10 +223,13 @@ def test_cli_study_json_and_no_persist(
 def test_cli_study_missing_gold(
     tmp_path: Path, capsys: CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(
-        "llmfr.cli._build_hf_adapter",
-        lambda **_kwargs: DigitFake(prompt_ids=[1]),
-    )
+    built: list[str] = []
+
+    def _adapter(**_kwargs: object) -> DigitFake:
+        built.append("adapter")
+        return DigitFake(prompt_ids=[1])
+
+    monkeypatch.setattr("llmfr.cli._build_record_adapter", _adapter)
     path = _write(tmp_path / "prompts.jsonl", '{"prompt":"Hello"}\n')
     code = run(["study", str(path), "--store", str(tmp_path / "store")])
     assert code == 1
@@ -234,19 +237,44 @@ def test_cli_study_missing_gold(
     assert "error:" in err
     assert "study requires integer gold" in err
     assert "Traceback" not in err
+    assert built == []
 
 
 def test_cli_study_text_file_has_no_gold(
     tmp_path: Path, capsys: CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(
-        "llmfr.cli._build_hf_adapter",
-        lambda **_kwargs: DigitFake(prompt_ids=[1]),
-    )
+    built: list[str] = []
+
+    def _adapter(**_kwargs: object) -> DigitFake:
+        built.append("adapter")
+        return DigitFake(prompt_ids=[1])
+
+    monkeypatch.setattr("llmfr.cli._build_record_adapter", _adapter)
     path = _write(tmp_path / "prompts.txt", "What is 2 plus 2?\n")
     code = run(["study", str(path), "--store", str(tmp_path / "store")])
     assert code == 1
     assert "study requires integer gold" in capsys.readouterr().err
+    assert built == []
+
+
+def test_cli_study_per_line_seed_skips_adapter(
+    tmp_path: Path, capsys: CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    built: list[str] = []
+
+    def _adapter(**_kwargs: object) -> DigitFake:
+        built.append("adapter")
+        return DigitFake(prompt_ids=[1])
+
+    monkeypatch.setattr("llmfr.cli._build_record_adapter", _adapter)
+    path = _write(
+        tmp_path / "prompts.jsonl",
+        json.dumps({"prompt": "What is 2 plus 2?", "gold": 4, "seed": 9}) + "\n",
+    )
+    code = run(["study", str(path), "--store", str(tmp_path / "store")])
+    assert code == 1
+    assert "CLI splits" in capsys.readouterr().err
+    assert built == []
 
 
 def test_cli_study_invalid_seeds_is_usage(tmp_path: Path, capsys: CaptureFixture[str]) -> None:

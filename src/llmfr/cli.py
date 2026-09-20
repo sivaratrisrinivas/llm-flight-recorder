@@ -55,6 +55,7 @@ from llmfr.study import (
     format_study_report,
     parse_float_pair,
     parse_int_pair,
+    require_study_jobs,
     run_study,
 )
 
@@ -720,6 +721,7 @@ def _cmd_study(
         return _usage(str(exc))
     try:
         jobs = load_prompt_file(Path(prompts))
+        require_study_jobs(jobs)
         adapter = _build_record_adapter(
             model_id=model,
             provider=provider,
