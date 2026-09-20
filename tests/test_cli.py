@@ -70,6 +70,7 @@ def test_cli_record_is_listed() -> None:
     assert "replay" in help_text
     assert "compare" in help_text
     assert "inspect" in help_text
+    assert "study" in help_text
     assert "Exit codes:" in help_text
     assert "Compare commands are not available yet." not in help_text
 

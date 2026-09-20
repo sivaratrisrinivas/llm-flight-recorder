@@ -159,6 +159,12 @@ printf '%s\n' '{"prompt":"Hello"}' '{"prompt":"How many sheep are left?"}' > pro
 llmfr record --prompts prompts.jsonl --store .llmfr --max-new-tokens 8 --greedy
 ```
 
+Graded sampling vs decoding-config study. Same JSONL as `--prompts` plus required integer `gold`. The last whole number in the completion is graded against gold (no LLM judge). Hugging Face default. Schema: `docs/adr/0011-study.md`.
+
+```bash
+llmfr study examples/study/prompts.jsonl --store .llmfr --max-new-tokens 64
+```
+
 OpenAI is an optional extra, not the default. `pip install -e '.[openai]'`, set `OPENAI_API_KEY` in the environment (no `--api-key` flag), then `llmfr record "Hello" --provider openai --model gpt-4o-mini` (or `--model openai:gpt-4o-mini`). Bare `gpt-*` names stay Hugging Face unless `--provider openai` or the `openai:` prefix is set. The adapter stores `top_logprobs` when the API returns them. If the response omits per-token logprob content, recording fails closed (no tiktoken-reconstructed steps). That is not a full-vocab logit vector, and `llmfr replay` of an OpenAI trace is `not_replayable`. Hugging Face remains the local/CI path. See `docs/adr/0009-openai-adapter.md`.
 
 ## Essentials

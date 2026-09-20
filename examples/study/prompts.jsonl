@@ -1,0 +1,8 @@
+{"id": "sheep_trick", "prompt": "A farmer has 17 sheep. All but 9 run away. How many sheep are left? Think step by step, then give the final number.", "gold": 9}
+{"id": "seven_plus_five", "prompt": "What is 7 plus 5? Think step by step, then give the final number.", "gold": 12}
+{"id": "twelve_minus_four", "prompt": "What is 12 minus 4? Think step by step, then give the final number.", "gold": 8}
+{"id": "three_times_six", "prompt": "What is 3 times 6? Think step by step, then give the final number.", "gold": 18}
+{"id": "cows_sold", "prompt": "A farmer has 10 cows. He sells 3. How many cows remain? Think step by step, then give the final number.", "gold": 7}
+{"id": "hundred_div_four", "prompt": "What is 100 divided by 4? Think step by step, then give the final number.", "gold": 25}
+{"id": "apples_left", "prompt": "There are 8 apples. You eat 2. How many apples are left? Think step by step, then give the final number.", "gold": 6}
+{"id": "two_plus_two", "prompt": "What is 2 plus 2? Think step by step, then give the final number.", "gold": 4}

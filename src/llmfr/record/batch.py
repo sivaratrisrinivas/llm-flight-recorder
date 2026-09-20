@@ -38,6 +38,7 @@ class PromptRecord(BaseModel):
     temperature: float | None = None
     max_new_tokens: int | None = Field(default=None, ge=1)
     greedy: bool | None = None
+    gold: int | None = None
     tags: dict[str, str] = Field(default_factory=dict)
 
     @field_validator("prompt")
@@ -58,6 +59,15 @@ class PromptRecord(BaseModel):
             raise ValueError("id must be a non-empty string")
         return stripped
 
+    @field_validator("gold", mode="before")
+    @classmethod
+    def _gold_integer(cls, value: object) -> int | None:
+        if value is None:
+            return None
+        if isinstance(value, bool) or not isinstance(value, int):
+            raise ValueError("gold must be an integer")
+        return value
+
 
 @dataclass(frozen=True)
 class PromptJob:
@@ -71,6 +81,7 @@ class PromptJob:
     temperature: float | None = None
     max_new_tokens: int | None = None
     greedy: bool | None = None
+    gold: int | None = None
     tags: dict[str, str] = field(default_factory=dict)
 
 
@@ -145,6 +156,8 @@ def record_prompt_batch(
         tags["batch_index"] = str(index)
         if job.id is not None:
             tags["id"] = job.id
+        if job.gold is not None:
+            tags["gold"] = str(job.gold)
         try:
             recorded = record_generation(
                 adapter,
@@ -254,6 +267,7 @@ def _job_from_payload(payload: Any, *, path: Path, line: int) -> PromptJob:
         temperature=record.temperature,
         max_new_tokens=record.max_new_tokens,
         greedy=record.greedy,
+        gold=record.gold,
         tags=dict(record.tags),
     )
 

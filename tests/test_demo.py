@@ -107,6 +107,11 @@ def test_readme_is_what_why_how_essentials_only() -> None:
     assert "prompts.jsonl" in text
     assert "docs/adr/0010-batch-record.md" in text
     assert "as that item succeeds" in text
+    assert "llmfr study" in text
+    assert "examples/study/prompts.jsonl" in text
+    assert "docs/adr/0011-study.md" in text
+    assert "last whole number" in text
+    assert "no LLM judge" in text
 
 
 def test_demo_markdown_embeds_captured_reports() -> None:

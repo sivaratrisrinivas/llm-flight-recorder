@@ -71,6 +71,22 @@ def test_load_jsonl_objects_and_strings(tmp_path: Path) -> None:
     assert jobs[2].tags == {"case": "demo"}
 
 
+def test_load_jsonl_gold_integer(tmp_path: Path) -> None:
+    path = _write(
+        tmp_path / "prompts.jsonl",
+        json.dumps({"prompt": "What is 2 plus 2?", "id": "two_plus_two", "gold": 4}) + "\n",
+    )
+    jobs = load_prompt_file(path)
+    assert jobs[0].gold == 4
+    assert jobs[0].id == "two_plus_two"
+
+
+def test_load_jsonl_rejects_non_integer_gold(tmp_path: Path) -> None:
+    path = _write(tmp_path / "prompts.jsonl", json.dumps({"prompt": "Hello", "gold": 4.5}) + "\n")
+    with pytest.raises(BatchPromptError, match="gold must be an integer"):
+        load_prompt_file(path)
+
+
 def test_load_json_array(tmp_path: Path) -> None:
     path = _write(
         tmp_path / "prompts.json",
@@ -139,6 +155,20 @@ def test_record_prompt_batch_persists_and_tags(tmp_path: Path) -> None:
         str(traces[0].run_metadata.trace_id),
         str(traces[1].run_metadata.trace_id),
     }
+
+
+def test_record_prompt_batch_stores_gold_tag(tmp_path: Path) -> None:
+    path = _write(
+        tmp_path / "prompts.jsonl",
+        json.dumps({"prompt": "What is 2 plus 2?", "gold": 4}) + "\n",
+    )
+    traces = record_prompt_batch(
+        FakeCausalLMAdapter(prompt_ids=[1, 2]),
+        load_prompt_file(path),
+        generation=GenerationConfig(max_new_tokens=1, do_sample=False),
+        persist=False,
+    )
+    assert traces[0].run_metadata.tags["gold"] == "4"
 
 
 def test_record_prompt_batch_openai_fail_closed_keeps_prior(tmp_path: Path) -> None:
