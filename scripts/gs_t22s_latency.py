@@ -64,15 +64,33 @@ DEFAULT_MAX_NEW_TOKENS = 16
 FAKE_WARMUP = 1
 FAKE_TRIALS = 3
 FAKE_MAX_NEW_TOKENS = 4
-PERCENTILE_METHOD = (
-    "nearest-rank: rank = ceil(p/100 * n), value = sorted[rank-1]. "
-    "With N=11, p99 is the maximum timed trial."
-)
+
+
+def percentile_method_text(n_trials: int) -> str:
+    n = int(n_trials)
+    if n < 1:
+        raise ValueError(f"n_trials must be >= 1, got {n}")
+    rank99 = math.ceil(99 / 100.0 * n)
+    if rank99 == n:
+        n_note = f"With N={n}, p99 is the maximum timed trial."
+    else:
+        n_note = f"With N={n}, p99 is nearest-rank {rank99} of {n}."
+    return "nearest-rank: rank = ceil(p/100 * n), value = sorted[rank-1]. " + n_note
+
+
+PERCENTILE_METHOD = percentile_method_text(DEFAULT_TRIALS)
 FAKE_SMOKE_COMMAND = (
     "python scripts/gs_t22s_latency.py --backend fake "
     "--out /tmp/llmfr-gs-t22s-fake "
     "--results /tmp/llmfr-gs-t22s-fake/results.json "
     "--finding /tmp/llmfr-gs-t22s-fake/finding.md"
+)
+CONTAINER_PREAMBLE = (
+    "Container/CI capture: backend=`{backend}` model=`{model}` "
+    "revision=`{revision}`. Timings below were measured in this run. "
+    "They are not the checked-in portfolio Qwen table "
+    "(`docs/findings/gs-t22s-latency.md`) unless this was "
+    "`--backend hf --write-docs` on the finding hardware."
 )
 
 _COMPARE_EXIT = frozenset({0, 1})
@@ -107,7 +125,7 @@ def summarize_samples(samples: Sequence[float], *, warmup: int, n_trials: int) -
         "mean_s": sum(values) / len(values),
         "p50_s": percentile(values, 50),
         "p99_s": percentile(values, 99),
-        "percentile_method": PERCENTILE_METHOD,
+        "percentile_method": percentile_method_text(n_trials),
     }
 
 
@@ -129,6 +147,14 @@ def require_portfolio_qwen(payload: Mapping[str, Any]) -> None:
         )
     if payload.get("backend") != "hf":
         raise ValueError("GS-T22s finding docs require backend=hf")
+
+
+def is_portfolio_capture(payload: Mapping[str, Any]) -> bool:
+    try:
+        require_portfolio_qwen(payload)
+    except ValueError:
+        return False
+    return True
 
 
 def _docs_bound(path: Path) -> bool:
@@ -447,7 +473,7 @@ def run_benchmark(
         "n_trials": n_trials,
         "max_new_tokens": max_new_tokens,
         "capture_k": CAPTURE_K,
-        "percentile_method": PERCENTILE_METHOD,
+        "percentile_method": percentile_method_text(n_trials),
         "hardware": _hardware(),
         "library_versions": _library_versions() if backend != "fake" else {"llmfr": LLMFR_VERSION},
         "prompt": PROMPT,
@@ -530,8 +556,39 @@ def recompute_payload(payload: Mapping[str, Any]) -> dict[str, Any]:
             merged["displayed_command"] = "llmfr " + shlex.join(list(argv))
         recomputed[name] = merged
     updated["commands"] = recomputed
-    updated["percentile_method"] = PERCENTILE_METHOD
+    updated["percentile_method"] = percentile_method_text(n_trials)
     return updated
+
+
+def container_preamble(results: Mapping[str, Any]) -> str:
+    revision = results.get("revision")
+    return (
+        CONTAINER_PREAMBLE.format(
+            backend=results.get("backend"),
+            model=results.get("model"),
+            revision="none" if revision in (None, "") else revision,
+        )
+        + "\n\n"
+    )
+
+
+def write_capture_outputs(
+    *,
+    payload: Mapping[str, Any],
+    finding_text: str,
+    results_path: Path,
+    finding_path: Path,
+    write_docs: bool,
+) -> None:
+    if write_docs:
+        _write_json(results_path, payload)
+        finding_path.write_text(finding_text, encoding="utf-8")
+        return
+    if not _docs_bound(results_path):
+        _write_json(results_path, payload)
+    if not _docs_bound(finding_path):
+        finding_path.parent.mkdir(parents=True, exist_ok=True)
+        finding_path.write_text(finding_text, encoding="utf-8")
 
 
 def readme_latency_line(results: Mapping[str, Any]) -> str:
@@ -540,17 +597,26 @@ def readme_latency_line(results: Mapping[str, Any]) -> str:
     study = results["commands"]["study"]
     warmup = results["warmup"]
     n_trials = results["n_trials"]
-    return (
-        f"CLI wall-clock on this CPU Qwen capture (warmup {warmup}, N={n_trials}): "
+    study_tokens = results.get("max_new_tokens", DEFAULT_MAX_NEW_TOKENS)
+    stats = (
         f"`llmfr record` p50/p99 {fmt_seconds(rec['p50_s'])}/{fmt_seconds(rec['p99_s'])} s, "
         f"`llmfr compare` p50/p99 {fmt_seconds(cmp_['p50_s'])}/{fmt_seconds(cmp_['p99_s'])} s, "
-        f"`llmfr study` (1 item, 16 tokens) p50/p99 "
+        f"`llmfr study` (1 item, {study_tokens} tokens) p50/p99 "
         f"{fmt_seconds(study['p50_s'])}/{fmt_seconds(study['p99_s'])} s. "
         "Method: [`docs/findings/gs-t22s-latency.md`](docs/findings/gs-t22s-latency.md)."
     )
+    if is_portfolio_capture(results):
+        prefix = f"CLI wall-clock on this CPU Qwen capture (warmup {warmup}, N={n_trials}): "
+        return prefix + stats
+    backend = results.get("backend")
+    model = results.get("model")
+    return (
+        f"Smoke/container capture (`backend={backend}`, model=`{model}`, "
+        f"warmup {warmup}, N={n_trials}): {stats} Not the portfolio Qwen table."
+    )
 
 
-def render_finding(results: Mapping[str, Any]) -> str:
+def render_finding(results: Mapping[str, Any], *, docs_footer: bool | None = None) -> str:
     rec = results["commands"]["record"]
     cmp_ = results["commands"]["compare"]
     study = results["commands"]["study"]
@@ -572,6 +638,60 @@ def render_finding(results: Mapping[str, Any]) -> str:
             f"{fmt_seconds(study['min_s'])} | {fmt_seconds(study['max_s'])} |"
         ),
     ]
+    if is_portfolio_capture(results):
+        question = [
+            "What is the wall-clock latency of `llmfr record`, `llmfr compare`, and",
+            "`llmfr study` on the portfolio Qwen CPU path? Report measured p50 and p99.",
+            "Do not invent timings. Fake-adapter and tiny-gpt2 smoke runs are not this table.",
+        ]
+        capture_note = [
+            "- **Library default / CI smoke:** `sshleifer/tiny-gpt2` and `--backend fake`",
+            "  are not used for this finding.",
+        ]
+        limits_model = [
+            "- 0.5B-class instruct model on CPU, no chat template (same raw-prompt",
+            "  style as the portfolio demo).",
+            "- The 1-item / 16-token study workload is not GS-T22q (N=30, 64 tokens).",
+            "- tiny-gpt2 answers and `--backend fake` timings are smoke. They are",
+            "  not the table above.",
+        ]
+    else:
+        question = [
+            "What is the wall-clock latency of `llmfr record`, `llmfr compare`, and",
+            "`llmfr study` on this smoke/container capture? Report measured p50 and p99.",
+            "Do not invent timings. This table is not the portfolio Qwen finding.",
+        ]
+        capture_note = [
+            f"- **Capture:** smoke/container (`backend={results['backend']}`).",
+            "  Not the checked-in Qwen table in `docs/findings/gs-t22s-latency.md`.",
+        ]
+        limits_model = [
+            "- This table is the smoke/container capture, not the portfolio Qwen",
+            "  p50/p99 in `docs/findings/gs-t22s-latency.md`.",
+            f"- The 1-item / {results['max_new_tokens']}-token study workload is not GS-T22q",
+            "  (N=30, 64 tokens).",
+        ]
+    if docs_footer is None:
+        docs_footer = is_portfolio_capture(results)
+    docs_block: list[str] = []
+    if docs_footer:
+        docs_block = [
+            "Re-run:",
+            "",
+            "```bash",
+            "python scripts/gs_t22s_latency.py --backend hf --write-docs",
+            "```",
+            "",
+            "CI smoke (fake adapter; must not overwrite this finding):",
+            "",
+            "```bash",
+            FAKE_SMOKE_COMMAND,
+            "```",
+            "",
+            "Raw JSON: `docs/findings/gs-t22s-results.json`.",
+            "Study prompt: `examples/findings/gs-t22s/prompts.jsonl`.",
+            "",
+        ]
     lines = [
         "# GS-T22s: CLI wall-clock latency (p50/p99)",
         "",
@@ -580,21 +700,18 @@ def render_finding(results: Mapping[str, Any]) -> str:
         "",
         "## Question",
         "",
-        "What is the wall-clock latency of `llmfr record`, `llmfr compare`, and",
-        "`llmfr study` on the portfolio Qwen CPU path? Report measured p50 and p99.",
-        "Do not invent timings. Fake-adapter and tiny-gpt2 smoke runs are not this table.",
+        *question,
         "",
         "## Setup",
         "",
         f"- **Warmup:** {results['warmup']} discarded invocations per command",
         "  (not included in p50/p99).",
         f"- **N trials:** {results['n_trials']} timed invocations per command.",
-        f"- **Percentile:** {results['percentile_method']}",
+        f"- **Percentile:** {percentile_method_text(int(results['n_trials']))}",
         f"- **Clock:** `time.perf_counter` around `{results['timing_mode']}`",
         "  `python -m llmfr ...` (same interpreter as `llmfr`).",
         f"- **Model:** `{results['model']}` revision `{results['revision']}`.",
-        "- **Library default / CI smoke:** `sshleifer/tiny-gpt2` and `--backend fake`",
-        "  are not used for this finding.",
+        *capture_note,
         f"- **record:** Demo 1 prompt, `--max-new-tokens {results['max_new_tokens']}`",
         f"  `--seed {RECORD_SEED}`, persist to a fresh temp store each trial.",
         "- **compare:** checked-in Demo 1 JSONL paths (no model). Exit 1 (diverged)",
@@ -607,21 +724,7 @@ def render_finding(results: Mapping[str, Any]) -> str:
         f"- **Library versions:** {results['library_versions']}",
         f"- **Backend:** `{results['backend']}` (`{results['timing_mode']}`).",
         "",
-        "Re-run:",
-        "",
-        "```bash",
-        "python scripts/gs_t22s_latency.py --backend hf --write-docs",
-        "```",
-        "",
-        "CI smoke (fake adapter; must not overwrite this finding):",
-        "",
-        "```bash",
-        FAKE_SMOKE_COMMAND,
-        "```",
-        "",
-        "Raw JSON: `docs/findings/gs-t22s-results.json`.",
-        "Study prompt: `examples/findings/gs-t22s/prompts.jsonl`.",
-        "",
+        *docs_block,
         "## Result",
         "",
         "Measured seconds. min/max are from the same timed trials as p50/p99.",
@@ -639,11 +742,7 @@ def render_finding(results: Mapping[str, Any]) -> str:
         "- N is small on purpose. This is not an SLA and not a CI budget.",
         "- Each record/study trial includes interpreter start, checkpoint load,",
         "  generation, and persist. Compare does not call a model.",
-        "- 0.5B-class instruct model on CPU, no chat template (same raw-prompt",
-        "  style as the portfolio demo).",
-        "- The 1-item / 16-token study workload is not GS-T22q (N=30, 64 tokens).",
-        "- tiny-gpt2 answers and `--backend fake` timings are smoke. They are",
-        "  not the table above.",
+        *limits_model,
         "- Llama-3.2-1B-Instruct was not used (gated; no HF_TOKEN).",
         "",
     ]
@@ -784,7 +883,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         if scratch_cm is not None:
             scratch_cm.cleanup()
 
-    text = render_finding(payload)
+    body = render_finding(payload, docs_footer=args.write_docs)
+    text = body if args.write_docs else container_preamble(payload) + body
     sys.stdout.write(text)
     if not text.endswith("\n"):
         sys.stdout.write("\n")
@@ -798,10 +898,21 @@ def main(argv: Sequence[str] | None = None) -> int:
         except ValueError as exc:
             sys.stderr.write(f"error: {exc}\n")
             return 2
-        _write_json(results_path, payload)
-        finding_path.write_text(text, encoding="utf-8")
-    elif args.backend != "hf":
-        _write_json(results_path, payload)
+        write_capture_outputs(
+            payload=payload,
+            finding_text=body,
+            results_path=results_path,
+            finding_path=finding_path,
+            write_docs=True,
+        )
+    else:
+        write_capture_outputs(
+            payload=payload,
+            finding_text=text,
+            results_path=results_path,
+            finding_path=finding_path,
+            write_docs=False,
+        )
     return 0
 
 

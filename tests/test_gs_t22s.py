@@ -48,6 +48,15 @@ def test_nearest_rank_percentile() -> None:
     assert stats["p99_s"] == 11.0
     assert stats["min_s"] == 1.0
     assert stats["max_s"] == 11.0
+    assert stats["percentile_method"] == script.PERCENTILE_METHOD
+    assert script.percentile_method_text(11) == script.PERCENTILE_METHOD
+    assert "With N=11, p99 is the maximum timed trial." in script.PERCENTILE_METHOD
+    three = script.percentile_method_text(3)
+    assert "With N=3, p99 is the maximum timed trial." in three
+    assert "N=11" not in three
+    one = script.percentile_method_text(1)
+    assert "With N=1, p99 is the maximum timed trial." in one
+    assert "N=11" not in one
     with pytest.raises(ValueError, match="at least one"):
         script.percentile([], 50)
     with pytest.raises(ValueError, match="expected 11"):
@@ -120,7 +129,7 @@ def test_fake_backend_refuses_docs_bound_paths(
     assert "refusing to overwrite docs/findings" in err_results
 
 
-def test_fake_backend_scratch_runs_without_writing_finding(
+def test_fake_backend_scratch_writes_labeled_finding_not_docs(
     capsys: pytest.CaptureFixture[str], tmp_path: Path
 ) -> None:
     script = _load_script()
@@ -147,7 +156,7 @@ def test_fake_backend_scratch_runs_without_writing_finding(
         ]
     )
     assert code == 0
-    capsys.readouterr()
+    captured = capsys.readouterr()
     payload = json.loads(results.read_text(encoding="utf-8"))
     assert payload["backend"] == "fake"
     assert payload["model"] == "fake-lm"
@@ -156,7 +165,35 @@ def test_fake_backend_scratch_runs_without_writing_finding(
     assert payload["n_trials"] == 3
     assert payload["timing_mode"] == "in-process-cli"
     assert payload["model"] != PORTFOLIO_DEMO_MODEL_ID
-    assert not finding.is_file()
+    assert finding.is_file()
+    finding_text = finding.read_text(encoding="utf-8")
+    preamble = script.container_preamble(payload)
+    assert finding_text.startswith(preamble)
+    assert "Container/CI capture" in finding_text
+    assert "backend=`fake`" in finding_text
+    assert "model=`fake-lm`" in finding_text
+    assert FINDING_MD_LINK in finding_text
+    assert captured.out.startswith(preamble)
+    assert "CPU Qwen capture" not in captured.out
+    assert "CPU Qwen capture" not in finding_text
+    assert "portfolio Qwen CPU path" not in finding_text
+    assert "smoke runs are not this table" not in finding_text
+    assert "are not used for this finding" not in finding_text
+    assert "They are not the table above" not in finding_text
+    assert "0.5B-class instruct model" not in finding_text
+    assert "smoke/container capture" in finding_text
+    assert "Smoke/container capture" in captured.out
+    assert "Not the portfolio Qwen table." in captured.out
+    assert script.readme_latency_line(payload).startswith("Smoke/container capture")
+    assert payload["percentile_method"] == script.percentile_method_text(3)
+    assert "With N=3, p99 is the maximum timed trial." in payload["percentile_method"]
+    assert "N=11" not in payload["percentile_method"]
+    assert "With N=3, p99 is the maximum timed trial." in finding_text
+    assert "With N=11, p99 is the maximum timed trial." not in finding_text
+    assert "python scripts/gs_t22s_latency.py --backend hf --write-docs" not in finding_text
+    assert "Raw JSON: `docs/findings/gs-t22s-results.json`" not in finding_text
+    assert "CI smoke (fake adapter; must not overwrite this finding)" not in finding_text
+    assert "python scripts/gs_t22s_latency.py --backend hf --write-docs" not in captured.out
     for name in ("record", "compare", "study"):
         row = payload["commands"][name]
         assert len(row["samples_s"]) == 3
@@ -170,6 +207,7 @@ def test_fake_backend_scratch_runs_without_writing_finding(
         assert not FINDING_MD.is_file()
     else:
         assert FINDING_MD.read_text(encoding="utf-8") == finding_before
+        assert FINDING_MD.read_text(encoding="utf-8") != finding_text
     if results_before is None:
         assert not RESULTS_JSON.is_file()
     else:
@@ -332,3 +370,48 @@ def test_checked_in_finding_matches_results_json() -> None:
     assert "llmfr record" in findings
     assert "llmfr compare" in findings
     assert "llmfr study" in findings
+    assert "CPU Qwen capture" in findings
+    assert "Smoke/container capture" not in findings
+
+
+def test_readme_latency_line_gates_qwen_wording_on_portfolio_pin() -> None:
+    script = _load_script()
+    payload = json.loads(RESULTS_JSON.read_text(encoding="utf-8"))
+    recomputed = script.recompute_payload(payload)
+    qwen_line = script.readme_latency_line(recomputed)
+    assert qwen_line.startswith("CLI wall-clock on this CPU Qwen capture")
+    assert "6.969" in qwen_line
+    assert script.is_portfolio_capture(recomputed)
+    smoke = dict(recomputed)
+    smoke["backend"] = "fake"
+    smoke["model"] = "fake-lm"
+    smoke["revision"] = None
+    smoke["max_new_tokens"] = 4
+    assert not script.is_portfolio_capture(smoke)
+    smoke_line = script.readme_latency_line(smoke)
+    assert smoke_line.startswith("Smoke/container capture")
+    assert "CPU Qwen capture" not in smoke_line
+    assert "backend=fake" in smoke_line
+    assert "model=`fake-lm`" in smoke_line
+    assert "Not the portfolio Qwen table." in smoke_line
+    tiny = dict(recomputed)
+    tiny["backend"] = "tiny-gpt2"
+    tiny["model"] = DEFAULT_HF_MODEL_ID
+    tiny["revision"] = None
+    tiny_line = script.readme_latency_line(tiny)
+    assert tiny_line.startswith("Smoke/container capture")
+    assert "CPU Qwen capture" not in tiny_line
+    rendered_smoke = script.render_finding(smoke)
+    assert "portfolio Qwen CPU path" not in rendered_smoke
+    assert "smoke runs are not this table" not in rendered_smoke
+    assert "are not used for this finding" not in rendered_smoke
+    assert "They are not the table above" not in rendered_smoke
+    assert "0.5B-class instruct model" not in rendered_smoke
+    assert "smoke/container capture" in rendered_smoke
+    assert "python scripts/gs_t22s_latency.py --backend hf --write-docs" not in rendered_smoke
+    assert "Raw JSON: `docs/findings/gs-t22s-results.json`" not in rendered_smoke
+    assert "CI smoke (fake adapter; must not overwrite this finding)" not in rendered_smoke
+    no_footer = script.render_finding(recomputed, docs_footer=False)
+    assert "python scripts/gs_t22s_latency.py --backend hf --write-docs" not in no_footer
+    assert "Raw JSON: `docs/findings/gs-t22s-results.json`" not in no_footer
+    assert FINDING_MD.read_text(encoding="utf-8") == script.render_finding(recomputed)

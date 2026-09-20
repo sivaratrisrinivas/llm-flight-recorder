@@ -167,6 +167,26 @@ llmfr study examples/study/prompts.jsonl --store .llmfr --max-new-tokens 64
 
 OpenAI is an optional extra, not the default. `pip install -e '.[openai]'`, set `OPENAI_API_KEY` in the environment (no `--api-key` flag), then `llmfr record "Hello" --provider openai --model gpt-4o-mini` (or `--model openai:gpt-4o-mini`). Bare `gpt-*` names stay Hugging Face unless `--provider openai` or the `openai:` prefix is set. The adapter stores `top_logprobs` when the API returns them. If the response omits per-token logprob content, recording fails closed (no tiktoken-reconstructed steps). That is not a full-vocab logit vector, and `llmfr replay` of an OpenAI trace is `not_replayable`. Hugging Face remains the local/CI path. See `docs/adr/0009-openai-adapter.md`.
 
+## Container
+
+The default image (`--target smoke`) runs `scripts/gs_t22s_latency.py --backend fake` via `scripts/container_latency.sh` and writes `/out/results.json` plus a labeled `/out/finding.md`. Those timings are fake-adapter smoke. They are not the Qwen p50/p99 in Findings.
+
+```bash
+docker build --target smoke -t llmfr:smoke .
+mkdir -p out
+docker run --rm -v "$PWD/out:/out" llmfr:smoke
+```
+
+`--target hf` adds CPU torch and the `hf` extra. The default command is `tiny-gpt2` (library CI smoke model, 1 trial). Pass `--backend hf` for the portfolio Qwen pin (downloads `Qwen/Qwen2.5-0.5B-Instruct`; slow). Container Qwen timings are that machine's capture. They do not replace the checked-in table unless you re-run `--backend hf --write-docs` on finding hardware.
+
+```bash
+docker build --target hf -t llmfr:hf .
+docker run --rm -v "$PWD/out:/out" llmfr:hf
+docker run --rm -v "$PWD/out:/out" llmfr:hf --backend hf --warmup 0 --trials 1
+```
+
+GitHub Actions workflow `.github/workflows/container-bench.yml` builds the smoke image on push and pull_request, runs the fake job, and uploads the JSON/MD artifacts. `workflow_dispatch` can select `tiny-gpt2` or `hf` (one trial). Artifact numbers are measured in that run. Portfolio Qwen numbers stay in [`docs/findings/gs-t22s-latency.md`](docs/findings/gs-t22s-latency.md).
+
 ## Essentials
 
 - Token replay on a pinned CPU checkpoint is not a promise of bit-identical logits across GPU, dtype, or PyTorch builds. See `docs/adr/0005-deterministic-replay.md`.
