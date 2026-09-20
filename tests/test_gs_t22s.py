@@ -165,6 +165,17 @@ def test_fake_backend_scratch_writes_labeled_finding_not_docs(
     assert "model=`fake-lm`" in finding_text
     assert FINDING_MD_LINK in finding_text
     assert captured.out.startswith(preamble)
+    assert "CPU Qwen capture" not in captured.out
+    assert "CPU Qwen capture" not in finding_text
+    assert "portfolio Qwen CPU path" not in finding_text
+    assert "smoke runs are not this table" not in finding_text
+    assert "are not used for this finding" not in finding_text
+    assert "They are not the table above" not in finding_text
+    assert "0.5B-class instruct model" not in finding_text
+    assert "smoke/container capture" in finding_text
+    assert "Smoke/container capture" in captured.out
+    assert "Not the portfolio Qwen table." in captured.out
+    assert script.readme_latency_line(payload).startswith("Smoke/container capture")
     for name in ("record", "compare", "study"):
         row = payload["commands"][name]
         assert len(row["samples_s"]) == 3
@@ -341,3 +352,42 @@ def test_checked_in_finding_matches_results_json() -> None:
     assert "llmfr record" in findings
     assert "llmfr compare" in findings
     assert "llmfr study" in findings
+    assert "CPU Qwen capture" in findings
+    assert "Smoke/container capture" not in findings
+
+
+def test_readme_latency_line_gates_qwen_wording_on_portfolio_pin() -> None:
+    script = _load_script()
+    payload = json.loads(RESULTS_JSON.read_text(encoding="utf-8"))
+    recomputed = script.recompute_payload(payload)
+    qwen_line = script.readme_latency_line(recomputed)
+    assert qwen_line.startswith("CLI wall-clock on this CPU Qwen capture")
+    assert "6.969" in qwen_line
+    assert script.is_portfolio_capture(recomputed)
+    smoke = dict(recomputed)
+    smoke["backend"] = "fake"
+    smoke["model"] = "fake-lm"
+    smoke["revision"] = None
+    smoke["max_new_tokens"] = 4
+    assert not script.is_portfolio_capture(smoke)
+    smoke_line = script.readme_latency_line(smoke)
+    assert smoke_line.startswith("Smoke/container capture")
+    assert "CPU Qwen capture" not in smoke_line
+    assert "backend=fake" in smoke_line
+    assert "model=`fake-lm`" in smoke_line
+    assert "Not the portfolio Qwen table." in smoke_line
+    tiny = dict(recomputed)
+    tiny["backend"] = "tiny-gpt2"
+    tiny["model"] = DEFAULT_HF_MODEL_ID
+    tiny["revision"] = None
+    tiny_line = script.readme_latency_line(tiny)
+    assert tiny_line.startswith("Smoke/container capture")
+    assert "CPU Qwen capture" not in tiny_line
+    rendered_smoke = script.render_finding(smoke)
+    assert "portfolio Qwen CPU path" not in rendered_smoke
+    assert "smoke runs are not this table" not in rendered_smoke
+    assert "are not used for this finding" not in rendered_smoke
+    assert "They are not the table above" not in rendered_smoke
+    assert "0.5B-class instruct model" not in rendered_smoke
+    assert "smoke/container capture" in rendered_smoke
+    assert FINDING_MD.read_text(encoding="utf-8") == script.render_finding(recomputed)

@@ -138,6 +138,14 @@ def require_portfolio_qwen(payload: Mapping[str, Any]) -> None:
         raise ValueError("GS-T22s finding docs require backend=hf")
 
 
+def is_portfolio_capture(payload: Mapping[str, Any]) -> bool:
+    try:
+        require_portfolio_qwen(payload)
+    except ValueError:
+        return False
+    return True
+
+
 def _docs_bound(path: Path) -> bool:
     try:
         path.resolve().relative_to(FINDING_DIR.resolve())
@@ -578,13 +586,22 @@ def readme_latency_line(results: Mapping[str, Any]) -> str:
     study = results["commands"]["study"]
     warmup = results["warmup"]
     n_trials = results["n_trials"]
-    return (
-        f"CLI wall-clock on this CPU Qwen capture (warmup {warmup}, N={n_trials}): "
+    study_tokens = results.get("max_new_tokens", DEFAULT_MAX_NEW_TOKENS)
+    stats = (
         f"`llmfr record` p50/p99 {fmt_seconds(rec['p50_s'])}/{fmt_seconds(rec['p99_s'])} s, "
         f"`llmfr compare` p50/p99 {fmt_seconds(cmp_['p50_s'])}/{fmt_seconds(cmp_['p99_s'])} s, "
-        f"`llmfr study` (1 item, 16 tokens) p50/p99 "
+        f"`llmfr study` (1 item, {study_tokens} tokens) p50/p99 "
         f"{fmt_seconds(study['p50_s'])}/{fmt_seconds(study['p99_s'])} s. "
         "Method: [`docs/findings/gs-t22s-latency.md`](docs/findings/gs-t22s-latency.md)."
+    )
+    if is_portfolio_capture(results):
+        prefix = f"CLI wall-clock on this CPU Qwen capture (warmup {warmup}, N={n_trials}): "
+        return prefix + stats
+    backend = results.get("backend")
+    model = results.get("model")
+    return (
+        f"Smoke/container capture (`backend={backend}`, model=`{model}`, "
+        f"warmup {warmup}, N={n_trials}): {stats} Not the portfolio Qwen table."
     )
 
 
@@ -610,6 +627,39 @@ def render_finding(results: Mapping[str, Any]) -> str:
             f"{fmt_seconds(study['min_s'])} | {fmt_seconds(study['max_s'])} |"
         ),
     ]
+    if is_portfolio_capture(results):
+        question = [
+            "What is the wall-clock latency of `llmfr record`, `llmfr compare`, and",
+            "`llmfr study` on the portfolio Qwen CPU path? Report measured p50 and p99.",
+            "Do not invent timings. Fake-adapter and tiny-gpt2 smoke runs are not this table.",
+        ]
+        capture_note = [
+            "- **Library default / CI smoke:** `sshleifer/tiny-gpt2` and `--backend fake`",
+            "  are not used for this finding.",
+        ]
+        limits_model = [
+            "- 0.5B-class instruct model on CPU, no chat template (same raw-prompt",
+            "  style as the portfolio demo).",
+            "- The 1-item / 16-token study workload is not GS-T22q (N=30, 64 tokens).",
+            "- tiny-gpt2 answers and `--backend fake` timings are smoke. They are",
+            "  not the table above.",
+        ]
+    else:
+        question = [
+            "What is the wall-clock latency of `llmfr record`, `llmfr compare`, and",
+            "`llmfr study` on this smoke/container capture? Report measured p50 and p99.",
+            "Do not invent timings. This table is not the portfolio Qwen finding.",
+        ]
+        capture_note = [
+            f"- **Capture:** smoke/container (`backend={results['backend']}`).",
+            "  Not the checked-in Qwen table in `docs/findings/gs-t22s-latency.md`.",
+        ]
+        limits_model = [
+            "- This table is the smoke/container capture, not the portfolio Qwen",
+            "  p50/p99 in `docs/findings/gs-t22s-latency.md`.",
+            f"- The 1-item / {results['max_new_tokens']}-token study workload is not GS-T22q",
+            "  (N=30, 64 tokens).",
+        ]
     lines = [
         "# GS-T22s: CLI wall-clock latency (p50/p99)",
         "",
@@ -618,9 +668,7 @@ def render_finding(results: Mapping[str, Any]) -> str:
         "",
         "## Question",
         "",
-        "What is the wall-clock latency of `llmfr record`, `llmfr compare`, and",
-        "`llmfr study` on the portfolio Qwen CPU path? Report measured p50 and p99.",
-        "Do not invent timings. Fake-adapter and tiny-gpt2 smoke runs are not this table.",
+        *question,
         "",
         "## Setup",
         "",
@@ -631,8 +679,7 @@ def render_finding(results: Mapping[str, Any]) -> str:
         f"- **Clock:** `time.perf_counter` around `{results['timing_mode']}`",
         "  `python -m llmfr ...` (same interpreter as `llmfr`).",
         f"- **Model:** `{results['model']}` revision `{results['revision']}`.",
-        "- **Library default / CI smoke:** `sshleifer/tiny-gpt2` and `--backend fake`",
-        "  are not used for this finding.",
+        *capture_note,
         f"- **record:** Demo 1 prompt, `--max-new-tokens {results['max_new_tokens']}`",
         f"  `--seed {RECORD_SEED}`, persist to a fresh temp store each trial.",
         "- **compare:** checked-in Demo 1 JSONL paths (no model). Exit 1 (diverged)",
@@ -677,11 +724,7 @@ def render_finding(results: Mapping[str, Any]) -> str:
         "- N is small on purpose. This is not an SLA and not a CI budget.",
         "- Each record/study trial includes interpreter start, checkpoint load,",
         "  generation, and persist. Compare does not call a model.",
-        "- 0.5B-class instruct model on CPU, no chat template (same raw-prompt",
-        "  style as the portfolio demo).",
-        "- The 1-item / 16-token study workload is not GS-T22q (N=30, 64 tokens).",
-        "- tiny-gpt2 answers and `--backend fake` timings are smoke. They are",
-        "  not the table above.",
+        *limits_model,
         "- Llama-3.2-1B-Instruct was not used (gated; no HF_TOKEN).",
         "",
     ]
