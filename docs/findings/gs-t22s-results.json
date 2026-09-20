@@ -1,0 +1,178 @@
+{
+  "finding_id": "GS-T22s",
+  "recorded_at": "2026-09-20T05:47:59.156865+00:00",
+  "backend": "hf",
+  "timing_mode": "subprocess",
+  "model": "Qwen/Qwen2.5-0.5B-Instruct",
+  "revision": "7ae557604adf67be50417f59c2c2f167def9a775",
+  "warmup": 2,
+  "n_trials": 11,
+  "max_new_tokens": 16,
+  "capture_k": 5,
+  "percentile_method": "nearest-rank: rank = ceil(p/100 * n), value = sorted[rank-1]. With N=11, p99 is the maximum timed trial.",
+  "hardware": {
+    "platform": "Linux-6.12.94+-x86_64-with-glibc2.39",
+    "python_version": "3.12.3",
+    "cpu_count": 4,
+    "machine": "x86_64",
+    "cpu_model": "Intel(R) Xeon(R) Processor"
+  },
+  "library_versions": {
+    "llmfr": "0.1.0",
+    "torch": "2.14.0+cpu",
+    "transformers": "5.17.0"
+  },
+  "prompt": "A farmer has 17 sheep. All but 9 run away. How many sheep are left? Think step by step, then give the final number.",
+  "study_prompts": "examples/findings/gs-t22s/prompts.jsonl",
+  "compare_trace_a": "examples/demo/demo1_a.jsonl",
+  "compare_trace_b": "examples/demo/demo1_b.jsonl",
+  "commands": {
+    "record": {
+      "command": "record",
+      "argv": [
+        "record",
+        "A farmer has 17 sheep. All but 9 run away. How many sheep are left? Think step by step, then give the final number.",
+        "--store",
+        ".llmfr-gs-t22s",
+        "--max-new-tokens",
+        "16",
+        "--seed",
+        "1",
+        "--capture-k",
+        "5",
+        "--model",
+        "Qwen/Qwen2.5-0.5B-Instruct",
+        "--revision",
+        "7ae557604adf67be50417f59c2c2f167def9a775"
+      ],
+      "displayed_command": "llmfr record 'A farmer has 17 sheep. All but 9 run away. How many sheep are left? Think step by step, then give the final number.' --store .llmfr-gs-t22s --max-new-tokens 16 --seed 1 --capture-k 5 --model Qwen/Qwen2.5-0.5B-Instruct --revision 7ae557604adf67be50417f59c2c2f167def9a775",
+      "timing_mode": "subprocess",
+      "allowed_exit_codes": [
+        0
+      ],
+      "workload": {
+        "prompt": "A farmer has 17 sheep. All but 9 run away. How many sheep are left? Think step by step, then give the final number.",
+        "max_new_tokens": 16,
+        "seed": 1,
+        "capture_k": 5,
+        "persist": true
+      },
+      "warmup": 2,
+      "n_trials": 11,
+      "n_samples": 11,
+      "samples_s": [
+        6.782681114999946,
+        6.836454371000059,
+        6.763125439000078,
+        6.971864695999898,
+        6.7616822300000194,
+        6.922016041999996,
+        7.236241788999905,
+        7.141684617999999,
+        7.334572363999996,
+        6.9689362970000275,
+        6.979379623
+      ],
+      "min_s": 6.7616822300000194,
+      "max_s": 7.334572363999996,
+      "mean_s": 6.972603507636356,
+      "p50_s": 6.9689362970000275,
+      "p99_s": 7.334572363999996,
+      "percentile_method": "nearest-rank: rank = ceil(p/100 * n), value = sorted[rank-1]. With N=11, p99 is the maximum timed trial."
+    },
+    "compare": {
+      "command": "compare",
+      "argv": [
+        "compare",
+        "examples/demo/demo1_a.jsonl",
+        "examples/demo/demo1_b.jsonl"
+      ],
+      "displayed_command": "llmfr compare examples/demo/demo1_a.jsonl examples/demo/demo1_b.jsonl",
+      "timing_mode": "subprocess",
+      "allowed_exit_codes": [
+        0,
+        1
+      ],
+      "workload": {
+        "trace_a": "examples/demo/demo1_a.jsonl",
+        "trace_b": "examples/demo/demo1_b.jsonl",
+        "calls_model": false,
+        "expected_exit": "0 identical or 1 diverged (Demo 1 is diverged)"
+      },
+      "warmup": 2,
+      "n_trials": 11,
+      "n_samples": 11,
+      "samples_s": [
+        0.14745249899999635,
+        0.1484257270000171,
+        0.14586097799997333,
+        0.14781864399992628,
+        0.14860726900008103,
+        0.15067118799993295,
+        0.15101598299997931,
+        0.1511504889999742,
+        0.15832114999989244,
+        0.15571889000000283,
+        0.15733612300005007
+      ],
+      "min_s": 0.14586097799997333,
+      "max_s": 0.15832114999989244,
+      "mean_s": 0.15112535818180237,
+      "p50_s": 0.15067118799993295,
+      "p99_s": 0.15832114999989244,
+      "percentile_method": "nearest-rank: rank = ceil(p/100 * n), value = sorted[rank-1]. With N=11, p99 is the maximum timed trial."
+    },
+    "study": {
+      "command": "study",
+      "argv": [
+        "study",
+        "examples/findings/gs-t22s/prompts.jsonl",
+        "--store",
+        ".llmfr-gs-t22s",
+        "--max-new-tokens",
+        "16",
+        "--capture-k",
+        "5",
+        "--model",
+        "Qwen/Qwen2.5-0.5B-Instruct",
+        "--revision",
+        "7ae557604adf67be50417f59c2c2f167def9a775"
+      ],
+      "displayed_command": "llmfr study examples/findings/gs-t22s/prompts.jsonl --store .llmfr-gs-t22s --max-new-tokens 16 --capture-k 5 --model Qwen/Qwen2.5-0.5B-Instruct --revision 7ae557604adf67be50417f59c2c2f167def9a775",
+      "timing_mode": "subprocess",
+      "allowed_exit_codes": [
+        0
+      ],
+      "workload": {
+        "prompts": "examples/findings/gs-t22s/prompts.jsonl",
+        "n_items": 1,
+        "max_new_tokens": 16,
+        "capture_k": 5,
+        "persist": true,
+        "recorded_sides_per_item": 4
+      },
+      "warmup": 2,
+      "n_trials": 11,
+      "n_samples": 11,
+      "samples_s": [
+        16.350517151000076,
+        15.972616002999985,
+        16.96124150600008,
+        19.715483037000013,
+        19.026983573000052,
+        17.196213494000062,
+        16.95086697499994,
+        15.783407234000038,
+        16.289231235999978,
+        16.597013443000037,
+        16.854030186000045
+      ],
+      "min_s": 15.783407234000038,
+      "max_s": 19.715483037000013,
+      "mean_s": 17.0634185307273,
+      "p50_s": 16.854030186000045,
+      "p99_s": 19.715483037000013,
+      "percentile_method": "nearest-rank: rank = ceil(p/100 * n), value = sorted[rank-1]. With N=11, p99 is the maximum timed trial."
+    }
+  }
+}

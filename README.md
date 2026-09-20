@@ -212,3 +212,5 @@ flowchart LR
 ```
 
 Full table, grading, and limits: [`docs/findings/gs-t22q.md`](docs/findings/gs-t22q.md). Raw JSON: [`docs/findings/gs-t22q-results.json`](docs/findings/gs-t22q-results.json).
+
+CLI wall-clock on this CPU Qwen capture (warmup 2, N=11): `llmfr record` p50/p99 6.969/7.335 s, `llmfr compare` p50/p99 0.151/0.158 s, `llmfr study` (1 item, 16 tokens) p50/p99 16.854/19.715 s. Method: [`docs/findings/gs-t22s-latency.md`](docs/findings/gs-t22s-latency.md).
