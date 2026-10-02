@@ -118,7 +118,10 @@ def main(argv: list[str] | None = None) -> int:
     heldout256 = DATA / "heldout256_labels.jsonl"
     if heldout256.exists():
         results["test_real_256"] = score_labeled(_load(heldout256))
-        _print_labeled("answer grader, held-out traces at the study default (256 tokens, stop strings)", results["test_real_256"])
+        _print_labeled(
+            "answer grader, held-out traces at the study default (256 tokens, stop strings)",
+            results["test_real_256"],
+        )
     results["synthetic"] = score_synthetic(_load(DATA / "answer_cases.jsonl"))
     s = results["synthetic"]
     print(
