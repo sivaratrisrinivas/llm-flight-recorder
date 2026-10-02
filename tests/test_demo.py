@@ -29,6 +29,7 @@ README_SECTIONS = (
     "Container",
     "Essentials",
     "Findings",
+    "Evals",
 )
 ADR_LINKS = (
     "docs/adr/0001-v1-trace-schema.md",

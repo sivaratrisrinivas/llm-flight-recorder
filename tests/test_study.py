@@ -16,9 +16,11 @@ from llmfr.record.batch import BatchPromptError, load_prompt_file
 from llmfr.storage import TraceStore
 from llmfr.study import (
     GRADING_RULE,
+    extract_final_answer,
     extract_last_whole_number,
     format_study_report,
     grade_output,
+    grade_output_last_number,
     pair_outcome,
     parse_float_pair,
     parse_int_pair,
@@ -60,9 +62,26 @@ def test_extract_last_whole_number_and_grades() -> None:
     assert extract_last_whole_number("2.0") == 2
     assert extract_last_whole_number("about 3.5") is None
     assert extract_last_whole_number("no digits") is None
-    assert grade_output("final 12", 12) == "correct"
-    assert grade_output("final 11", 12) == "wrong"
-    assert grade_output("hmm", 12) == "no_answer"
+    assert grade_output_last_number("final 12", 12) == "correct"
+    assert grade_output_last_number("final 11", 12) == "wrong"
+    assert grade_output_last_number("hmm", 12) == "no_answer"
+    assert grade_output("The answer is 12.", 12) == "correct"
+    assert grade_output("The answer is 11.", 12) == "wrong"
+    assert grade_output("Step 3: subtract", 12) == "no_answer"
+
+
+def test_final_answer_ignores_step_numbers_and_cut_numbers() -> None:
+    # Real GS-T22q shapes: step labels, a number cut at the token limit,
+    # and text the model wrote after its own end-of-sequence.
+    assert extract_final_answer("Step 2: add.\nStep 3: Calculate", truncated=True) is None
+    assert extract_final_answer("\\[ 7 + 5 = 1", truncated=True) is None
+    assert extract_final_answer("7 + 5 = 12. Step 3:", truncated=True) == 12
+    text = "3 plus 11 equals 14.<|endoftext|>Human: What is the product of 16 and 25?"
+    assert extract_final_answer(text, truncated=True) == 14
+    assert extract_final_answer("8 - 2 = 6 apples. The answer is 6. There are 4 x 3 = 12") == 6
+    assert extract_final_answer("\\[ 5 \\times 4 = 5 + 5 + 5 + 5 \\]") is None
+    assert extract_final_answer("12", truncated=False) == 12
+    assert extract_final_answer("12", truncated=True) is None
     assert pair_outcome("correct", "wrong") == "disagree"
     assert pair_outcome("no_answer", "correct") == "ungraded"
 
@@ -140,8 +159,11 @@ def test_run_study_records_pairs_and_grades(tmp_path: Path) -> None:
     assert "identical pairs:" not in table
     for pair in report.pairs:
         assert pair["gold"] == 2
-        assert pair["extracted_a"] == 2
-        assert pair["grade_a"] == "correct"
+        # One token at max_new_tokens=1: the run hit the limit, so a bare
+        # trailing digit may be cut mid-number and is not trusted.
+        assert pair["truncated_a"] is True
+        assert pair["extracted_a"] is None
+        assert pair["grade_a"] == "no_answer"
         assert pair["intended_kind"] in ("sampling", "decoding_config")
         assert pair["output_a"]
         assert pair["observed_class"] is None
@@ -453,7 +475,8 @@ def test_cli_study_redact_grades_then_hides_store(
     assert code == 0
     payload = json.loads(capsys.readouterr().out)
     assert payload["pairs"][0]["output_a"] is None
-    assert payload["pairs"][0]["grade_a"] == "correct"
+    assert payload["pairs"][0]["grade_a"] == "no_answer"
+    assert payload["pairs"][0]["truncated_a"] is True
     loaded = TraceStore(store).get(payload["pairs"][0]["trace_a"])
     assert loaded.run_metadata.prompt == REDACTED
     assert "secret" not in loaded.run_metadata.prompt

@@ -17,7 +17,7 @@ from llmfr.storage.store import FormatName, TraceStore
 from llmfr.study.grade import (
     GRADING_RULE,
     PairKind,
-    extract_last_whole_number,
+    extract_final_answer,
     grade_output,
     pair_outcome,
     summarize_pairs,
@@ -27,7 +27,10 @@ DEFAULT_SAMPLING_SEEDS = (1, 2)
 DEFAULT_SAMPLING_TEMPERATURE = 1.0
 DEFAULT_DECODING_SEED = 1
 DEFAULT_DECODING_TEMPERATURES = (0.7, 1.2)
-DEFAULT_STUDY_MAX_NEW_TOKENS = 64
+DEFAULT_STUDY_MAX_NEW_TOKENS = 256
+# Stop strings so a run ends at the model's own end-of-sequence instead of
+# writing a new made-up problem after it (seen in GS-T22q traces).
+STUDY_STOP = ["<|endoftext|>", "<|im_end|>", "</s>", "<|eot_id|>"]
 STUDY_KINDS: tuple[PairKind, ...] = ("sampling", "decoding_config")
 
 _PER_ITEM_SPLIT_FIELDS = ("seed", "temperature", "greedy", "max_new_tokens")
@@ -277,12 +280,14 @@ def _pair_kind_configs(
         return (
             GenerationConfig(
                 max_new_tokens=max_new_tokens,
+                stop=list(STUDY_STOP),
                 do_sample=True,
                 temperature=sampling_temperature,
                 seed=sampling_seeds[0],
             ),
             GenerationConfig(
                 max_new_tokens=max_new_tokens,
+                stop=list(STUDY_STOP),
                 do_sample=True,
                 temperature=sampling_temperature,
                 seed=sampling_seeds[1],
@@ -291,12 +296,14 @@ def _pair_kind_configs(
     return (
         GenerationConfig(
             max_new_tokens=max_new_tokens,
+            stop=list(STUDY_STOP),
             do_sample=True,
             temperature=decoding_temperatures[0],
             seed=decoding_seed,
         ),
         GenerationConfig(
             max_new_tokens=max_new_tokens,
+            stop=list(STUDY_STOP),
             do_sample=True,
             temperature=decoding_temperatures[1],
             seed=decoding_seed,
@@ -317,8 +324,10 @@ def _grade_pair(
 ) -> dict[str, Any]:
     compared = compare_traces(trace_a, trace_b)
     first = compared.first_divergence
-    grade_a = grade_output(trace_a.run_metadata.output_text, gold)
-    grade_b = grade_output(trace_b.run_metadata.output_text, gold)
+    trunc_a = _hit_token_limit(trace_a)
+    trunc_b = _hit_token_limit(trace_b)
+    grade_a = grade_output(trace_a.run_metadata.output_text, gold, truncated=trunc_a)
+    grade_b = grade_output(trace_b.run_metadata.output_text, gold, truncated=trunc_b)
     return {
         "item_id": item_id,
         "gold": gold,
@@ -329,8 +338,10 @@ def _grade_pair(
         "identical": compared.identical,
         "grade_a": grade_a,
         "grade_b": grade_b,
-        "extracted_a": extract_last_whole_number(trace_a.run_metadata.output_text),
-        "extracted_b": extract_last_whole_number(trace_b.run_metadata.output_text),
+        "extracted_a": extract_final_answer(trace_a.run_metadata.output_text, truncated=trunc_a),
+        "extracted_b": extract_final_answer(trace_b.run_metadata.output_text, truncated=trunc_b),
+        "truncated_a": trunc_a,
+        "truncated_b": trunc_b,
         "outcome": pair_outcome(grade_a, grade_b),
         "output_a": trace_a.run_metadata.output_text if include_outputs else None,
         "output_b": trace_b.run_metadata.output_text if include_outputs else None,
@@ -341,3 +352,11 @@ def _grade_pair(
         "temperature_a": trace_a.generation_config.temperature,
         "temperature_b": trace_b.generation_config.temperature,
     }
+
+
+def _hit_token_limit(trace: Trace) -> bool:
+    """True when the run used every allowed new token, so the text may be cut."""
+    limit = trace.generation_config.max_new_tokens
+    if limit is None:
+        return False
+    return len(trace.events) >= limit
