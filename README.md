@@ -51,14 +51,14 @@ flowchart LR
 Core package (schema, storage, CLI, tests with a fake adapter):
 
 ```bash
-pip install -e ".[dev]"
+pip install -c constraints.txt -e ".[dev]"
 ```
 
 `record` and live `replay` need the Hugging Face extra. Install a CPU torch wheel first so pip does not pull the CUDA-default PyPI build:
 
 ```bash
-pip install --index-url https://download.pytorch.org/whl/cpu torch
-pip install --upgrade-strategy only-if-needed -e ".[dev,hf]"
+pip install --index-url https://download.pytorch.org/whl/cpu -c constraints.txt torch
+pip install -c constraints.txt --upgrade-strategy only-if-needed -e ".[dev,hf]"
 ```
 
 Default model is `sshleifer/tiny-gpt2` (CI/smoke). Store directory defaults to `.llmfr`. Omit `--model` to keep that smoke path. Portfolio Demo 1/2 use the ungated `Qwen/Qwen2.5-0.5B-Instruct` checkpoint at Hub commit `7ae557604adf67be50417f59c2c2f167def9a775` and a reasoning prompt (real scores, not invented). `meta-llama/Llama-3.2-1B-Instruct` was preferred for a 1B-class demo, but that Hub repo is gated and the capture environment had no `HF_TOKEN`, so Llama was not recorded:
@@ -245,8 +245,9 @@ CLI wall-clock on this CPU Qwen capture (warmup 2, N=11): `llmfr record` p50/p99
 |---|---|---|
 | Study answer grader vs hand labels, held-out real traces (labeled after the rule was frozen) | 40 | TPR 0.818 (9/11), TNR 1.000 (29/29) |
 | Same, dev real traces (rule tuned on these, so optimistic) | 120 | TPR 0.979, TNR 0.986 |
+| Same, held-out traces re-recorded at the new default (256 tokens, stop strings) | 20 | TPR 0.85 (17/20); old rule 0.90 (18/20) |
 | Grader regression suite (synthetic: answer style x ending x distractors x operation) | 520 | 520/520 (old rule 86/520) |
 | `compare` names the injected divergence cause | 816 | 812/816 |
 
-The failure modes came from reading 120 real Qwen2.5-0.5B traces: runs cut off at 64 tokens, text after the end token, and numbers cut in half. That led to a new final-answer grader, end-of-text stop strings in `llmfr study`, and a 256-token default. Labels were made by an AI agent and need a human spot check. The 4 divergence misses are `runtime_logits` with `capture_k=1`, where the stored top-1 logit does not change.
+The failure modes came from reading 120 real Qwen2.5-0.5B traces: runs cut off at 64 tokens, text after the end token, and numbers cut in half. That led to a new final-answer grader, end-of-text stop strings in `llmfr study`, and a 256-token default. On clean 256-token runs the new grader is no better than the old last-number rule; its gain is on truncated runs. Labels were made by an AI agent and need a human spot check. The 4 divergence misses are `runtime_logits` with `capture_k=1`, where the stored top-1 logit does not change.
 

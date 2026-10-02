@@ -75,6 +75,28 @@ The 4 divergence misses are all `runtime_logits` with `capture_k=1` and a peaked
 distribution: the stored top-1 logit did not change, so compare honestly reports
 a probability-distribution split. Capture k >= 2 if you need that distinction.
 
+### Held-out traces at the new study default (2026-10-03)
+
+The 40 held-out traces above were recorded at 64 tokens, before the study switched to 256 tokens with
+stop strings. So the grader had not been checked on the traces the study now produces. The first 20
+held-out prompts were re-recorded at 256 tokens with stop strings (`record_heldout.py --max-new-tokens
+256 --stop-at-eos`; the other 20 were not, because of CPU time) and labeled from the raw text before
+scoring (`data/heldout256_labels.jsonl`).
+
+| Set | New rule | Old last-number rule |
+|---|---|---|
+| Held-out, 256 tokens + stop (n=20, all with an answer) | TPR 0.85 (17/20) | TPR 0.90 (18/20) |
+
+In plain words: once runs finish cleanly, most answers are the last number anyway, and the new rule
+is no better than the old one on this small set. Its gain is on truncated runs (the 64-token sets
+above). New-rule misses: "43 (existing cards) + 37 (found cards) = 80 cards ... the final number of
+cards Arjun has is 80" (words inside the equation, the same miss as before, and "final number ... is"
+is not an answer marker); a rambling truncated run whose last completed equation is a side
+calculation (13500 instead of 135); and a truncated run that never settles (label 20, both rules say
+108; that label is debatable). They were not tuned away, because this is a test set. Add these
+patterns to `answer_cases.py` and fix them on dev data first. There are no no-answer traces in this
+set, so TNR is not measured at 256 tokens.
+
 ### What this means for GS-T22q
 
 Re-grading the same 60 pairs:
@@ -87,8 +109,8 @@ Re-grading the same 60 pairs:
 The published 0.70 / 0.75 wrong-answer rates and the 10/30 and 13/30 disagree
 counts come from the old grader and mostly measure truncation. The "null" verdict
 still holds, but the real reason is that most pairs never reached an answer at 64
-tokens. A re-run at 256 tokens with stop strings is the fix; it was not run here
-(about 40 minutes of CPU per 40 traces on this box).
+tokens. A full re-run of the study at 256 tokens with stop strings is the fix; it was not run here
+(CPU time). Only the 20 held-out grader traces above were re-recorded at 256 tokens.
 
 ## Caveats
 
