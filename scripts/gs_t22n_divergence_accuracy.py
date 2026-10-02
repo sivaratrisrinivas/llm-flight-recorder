@@ -32,14 +32,18 @@ from llmfr.compare import compare_traces
 from llmfr.core.schema import GenerationConfig, Trace, dumps_jsonl
 from llmfr.record import record_generation
 from llmfr.study import (
-    GRADING_RULE,
+    LAST_NUMBER_RULE as GRADING_RULE,
+)
+from llmfr.study import (
     MIN_GRADEABLE_FOR_VERDICT,
     RATE_RATIO_FOR_POSITIVE,
     PairKind,
     descriptive_verdict,
     extract_last_whole_number,
-    grade_output,
     pair_outcome,
+)
+from llmfr.study import (
+    grade_output_last_number as grade_output,
 )
 from llmfr.study.grade import summarize_pairs as _summarize_study_pairs
 

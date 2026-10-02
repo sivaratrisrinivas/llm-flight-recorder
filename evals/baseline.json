@@ -1,0 +1,1 @@
+{"synthetic_min_pass": 520, "divergence_min_pass": 812, "dev_real": {"tpr": 0.9792, "tnr": 0.9861}, "test_real": {"tpr": 0.8182, "tnr": 1.0}}

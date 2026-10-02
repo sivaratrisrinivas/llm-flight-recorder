@@ -231,6 +231,22 @@ flowchart LR
   class lab labFill
 ```
 
+**Grader caveat (2026-10-02).** These counts used the old last-number grader. Hand labels on the same 120 traces show 72 never reached an answer within 64 tokens and only 1 was wrong, so the disagree counts and the 0.70 / 0.75 wrong-answer rates mostly measure truncation. See [Evals](#evals).
+
 Full table, grading, and limits: [`docs/findings/gs-t22q.md`](docs/findings/gs-t22q.md). Raw JSON: [`docs/findings/gs-t22q-results.json`](docs/findings/gs-t22q-results.json).
 
 CLI wall-clock on this CPU Qwen capture (warmup 2, N=11): `llmfr record` p50/p99 6.969/7.335 s, `llmfr compare` p50/p99 0.151/0.158 s, `llmfr study` (1 item, 16 tokens) p50/p99 16.854/19.715 s. Method: [`docs/findings/gs-t22s-latency.md`](docs/findings/gs-t22s-latency.md).
+
+## Evals
+
+`make eval` (or `python evals/run_evals.py`) runs every eval on CPU with no download. CI runs it on every push and fails if a number drops below `evals/baseline.json`. Details, method, and the monitoring loop: [`evals/README.md`](evals/README.md).
+
+| What is checked | Cases | Result |
+|---|---|---|
+| Study answer grader vs hand labels, held-out real traces (labeled after the rule was frozen) | 40 | TPR 0.818 (9/11), TNR 1.000 (29/29) |
+| Same, dev real traces (rule tuned on these, so optimistic) | 120 | TPR 0.979, TNR 0.986 |
+| Grader regression suite (synthetic: answer style x ending x distractors x operation) | 520 | 520/520 (old rule 86/520) |
+| `compare` names the injected divergence cause | 816 | 812/816 |
+
+The failure modes came from reading 120 real Qwen2.5-0.5B traces: runs cut off at 64 tokens, text after the end token, and numbers cut in half. That led to a new final-answer grader, end-of-text stop strings in `llmfr study`, and a 256-token default. Labels were made by an AI agent and need a human spot check. The 4 divergence misses are `runtime_logits` with `capture_k=1`, where the stored top-1 logit does not change.
+

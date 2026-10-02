@@ -14,14 +14,16 @@ import platform
 import shutil
 import sys
 from collections.abc import Mapping, Sequence
-from datetime import UTC, datetime
+from datetime import UTC
 from pathlib import Path
 from typing import Any
 
 from llmfr.adapters.huggingface import PORTFOLIO_DEMO_MODEL_ID, PORTFOLIO_DEMO_MODEL_REVISION
 from llmfr.core.schema import load_path
 from llmfr.study import (
-    GRADING_RULE,
+    LAST_NUMBER_RULE as GRADING_RULE,
+)
+from llmfr.study import (
     MIN_GRADEABLE_FOR_VERDICT,
     RATE_RATIO_FOR_POSITIVE,
     descriptive_verdict,
@@ -295,7 +297,7 @@ def render_finding(results: Mapping[str, Any]) -> str:
         "",
         "## Result",
         "",
-        f"**Rates (raw).** Sampling disagree rate is",
+        "**Rates (raw).** Sampling disagree rate is",
         f"{_fmt_rate(sampling['disagree_rate'])} "
         f"({sampling['disagree']}/{sampling['n_gradeable_diverged']});",
         "decoding-config disagree rate is",

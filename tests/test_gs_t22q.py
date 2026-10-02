@@ -19,7 +19,12 @@ from llmfr.adapters.huggingface import (
 from llmfr.compare import compare_traces
 from llmfr.core.schema import load_path
 from llmfr.record.batch import load_prompt_file
-from llmfr.study import descriptive_verdict, grade_output, require_study_jobs, summarize_pairs
+from llmfr.study import (
+    descriptive_verdict,
+    grade_output_last_number,
+    require_study_jobs,
+    summarize_pairs,
+)
 
 REPO = Path(__file__).resolve().parents[1]
 SCRIPT = REPO / "scripts" / "gs_t22q_pack_study.py"
@@ -242,8 +247,8 @@ def test_checked_in_traces_recompare_without_model() -> None:
         observed = None if first is None else first.classification
         assert observed == pair["observed_class"]
         gold = int(pair["gold"])
-        assert grade_output(trace_a.run_metadata.output_text, gold) == pair["grade_a"]
-        assert grade_output(trace_b.run_metadata.output_text, gold) == pair["grade_b"]
+        assert grade_output_last_number(trace_a.run_metadata.output_text, gold) == pair["grade_a"]
+        assert grade_output_last_number(trace_b.run_metadata.output_text, gold) == pair["grade_b"]
         assert trace_a.run_metadata.logits.mode == "topk"
         assert trace_a.events
         assert trace_a.events[0].sampled_logit is not None
